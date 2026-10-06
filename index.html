@@ -138,42 +138,66 @@ function chooseDuplicate(list){
   return list[n-1]||null;
 }
 
-function getBatchTotalFromCloud(p){
+function cloudFrameRequest(params={}, formFields=null){
   return new Promise((resolve,reject)=>{
-    const cb="xinnanCb_"+Date.now()+"_"+Math.random().toString(36).slice(2);
-    const s=document.createElement("script");
+    const requestId="req_"+Date.now()+"_"+Math.random().toString(36).slice(2);
+    const iframe=document.createElement("iframe");
+    iframe.name="xinnanFrame_"+requestId;
+    iframe.style.display="none";
+    document.body.appendChild(iframe);
+
+    let form=null;
     let done=false;
     const cleanup=()=>{
       if(done)return;done=true;
-      try{delete window[cb]}catch(e){window[cb]=undefined}
-      if(s.parentNode)s.parentNode.removeChild(s);
+      window.removeEventListener("message",onMessage);
+      if(form&&form.parentNode)form.parentNode.removeChild(form);
+      if(iframe.parentNode)iframe.parentNode.removeChild(iframe);
     };
     const timer=setTimeout(()=>{
       cleanup();
-      reject(new Error("累計查詢逾時"));
-    },10000);
-    window[cb]=(data)=>{
+      reject(new Error("雲端回應逾時"));
+    },15000);
+
+    const onMessage=(event)=>{
+      if(event.source!==iframe.contentWindow)return;
+      const data=event.data;
+      if(!data||data.source!=="xinnan-inventory"||data.requestId!==requestId)return;
       clearTimeout(timer);
       cleanup();
-      if(data&&data.ok) resolve(Number(data.batchTotal||0));
-      else reject(new Error((data&&data.error)||"累計查詢失敗"));
+      if(data.ok)resolve(data);
+      else reject(new Error(data.error||"雲端操作失敗"));
     };
-    const params=new URLSearchParams({
-      action:"getBatchTotal",
-      batch:localBatch(),
-      barcode:p.barcode||"",
-      productName:p.name,
-      callback:cb,
-      _:String(Date.now())
-    });
-    s.src=CLOUD_ENDPOINT+"?"+params.toString();
-    s.onerror=()=>{
-      clearTimeout(timer);
-      cleanup();
-      reject(new Error("無法連線累計服務"));
-    };
-    document.body.appendChild(s);
+    window.addEventListener("message",onMessage);
+
+    if(formFields){
+      form=document.createElement("form");
+      form.method="POST";
+      form.action=CLOUD_ENDPOINT;
+      form.target=iframe.name;
+      form.style.display="none";
+      const fields={...formFields,responseMode:"postMessage",requestId};
+      for(const [k,v] of Object.entries(fields)){
+        const input=document.createElement("input");
+        input.type="hidden";input.name=k;input.value=String(v??"");
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
+    }else{
+      const q=new URLSearchParams({...params,requestId,_:String(Date.now())});
+      iframe.src=CLOUD_ENDPOINT+"?"+q.toString();
+    }
   });
+}
+
+function getBatchTotalFromCloud(p){
+  return cloudFrameRequest({
+    action:"getBatchTotalFrame",
+    batch:localBatch(),
+    barcode:p.barcode||"",
+    productName:p.name
+  }).then(data=>Number(data.batchTotal||0));
 }
 
 function showProductObject(p,method="條碼掃描"){
@@ -218,45 +242,51 @@ async function sendCountToCloud(p,qty,method){
   const status=$("cloudStatus");
   status.className="status";
   status.textContent="☁️ 正在寫入正式盤點："+p.name+" × "+qty+"…";
-  const payload={
+  const result=await cloudFrameRequest({},{
     employee:$("employee").value.trim(),
     barcode:p.barcode||"",
     productName:p.name,
     qty:qty,
     inputMethod:method,
     batch:localBatch()
-  };
-  try{
-    await fetch(CLOUD_ENDPOINT,{
-      method:"POST",
-      mode:"no-cors",
-      headers:{"Content-Type":"text/plain;charset=utf-8"},
-      body:JSON.stringify(payload),
-      redirect:"follow"
-    });
-    await new Promise(r=>setTimeout(r,250));
-    const total=await getBatchTotalFromCloud(p);
-    status.className="status ok";
-    status.innerHTML="✅ 本次加入 <b>"+qty+"</b>｜本批累計 <b style=\"font-size:20px\">"+total+"</b><br>"+esc(p.name);
-  }catch(err){
-    status.className="status bad";
-    status.textContent="⚠️ 已嘗試送出，但目前無法確認中央累計。請先不要重複送出同一筆，稍後重新掃此商品查看『本批目前已盤』。";
-    console.error(err);
-  }
+  });
+  const total=Number(result.batchTotal||0);
+  status.className="status ok";
+  status.innerHTML="✅ 本次加入 <b>"+qty+"</b>｜本批累計 <b style=\"font-size:20px\">"+total+"</b><br>"+esc(p.name);
+  return result;
 }
-function addCurrent(qty){
-  if(!currentProduct)return;
+
+let savingCount=false;
+async function addCurrent(qty){
+  if(!currentProduct||savingCount)return;
   qty=Math.floor(Number(qty)||0);
   if(qty<1){alert("請輸入正確數量");return}
   const p=currentProduct;
   const method=currentMethod;
-  const k=keyOf(p);
-  counts[k]=counts[k]||{product:p,qty:0};
-  counts[k].qty+=qty;
-  render();
-  sendCountToCloud(p,qty,method);
-  finishProduct();
+  savingCount=true;
+  $("quickBtn").disabled=true;
+  $("confirmBtn").disabled=true;
+  $("cancelBtn").disabled=true;
+  try{
+    await sendCountToCloud(p,qty,method);
+    const k=keyOf(p);
+    counts[k]=counts[k]||{product:p,qty:0};
+    counts[k].qty+=qty;
+    render();
+    finishProduct();
+  }catch(err){
+    const status=$("cloudStatus");
+    status.className="status bad";
+    status.textContent="❌ 這筆目前無法確認寫入，畫面會保留商品，請先不要重複按。請稍後再試。";
+    console.error(err);
+  }finally{
+    savingCount=false;
+    $("quickBtn").disabled=false;
+    $("confirmBtn").disabled=false;
+    $("cancelBtn").disabled=false;
+  }
 }
+
 function finishProduct(){
   currentProduct=null;scanPaused=false;$("productCard").style.display="none";lockedCode=null;
   if($("videoWrap").style.display!=="none"){
