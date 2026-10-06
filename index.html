@@ -38,7 +38,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="badge">📦 完整商品盤點測試版</div>
+  <div class="badge">✅ 正式盤點模式</div>
   <h1>信男藥局｜手機盤點</h1>
 
   <div class="card">
@@ -91,7 +91,7 @@
       <div class="metric"><span>本次總數量</span><b id="totalCount">0</b></div>
     </div>
     <div id="resultList" class="list"></div>
-    <div id="cloudStatus" class="status" style="margin-top:12px">☁️ 雲端連線測試版：加入盤點後會送到 Google Sheet。</div>
+    <div id="cloudStatus" class="status" style="margin-top:12px">☁️ 正式盤點：每筆確認後會寫入 Google Sheet「盤點紀錄」。</div>
   </div>
 
   <div class="card">
@@ -160,11 +160,7 @@ function showBarcode(code){
   if(p)showProductObject(p,"條碼掃描"); else {scanPaused=false;lockedCode=null;}
 }
 function localBatch(){
-  const d=new Date();
-  const y=d.getFullYear();
-  const m=String(d.getMonth()+1).padStart(2,"0");
-  const day=String(d.getDate()).padStart(2,"0");
-  return "TEST-"+y+m+day;
+  return "INITIAL-20261006";
 }
 
 async function sendCountToCloud(p,qty,method){
@@ -188,10 +184,10 @@ async function sendCountToCloud(p,qty,method){
       redirect:"follow"
     });
     status.className="status ok";
-    status.textContent="☁️ 已送出請求："+p.name+" × "+qty+"；請以 Google Sheet 出現紀錄為準。";
+    status.textContent="☁️ 已送出正式盤點："+p.name+" × "+qty+"；資料會寫入 INITIAL-20261006 批次。";
   }catch(err){
     status.className="status bad";
-    status.textContent="❌ 雲端送出失敗，這筆先不要當正式盤點。請重新整理後再試。";
+    status.textContent="❌ 雲端送出失敗：這筆沒有完成正式盤點，請重新整理後再試。";
     console.error(err);
   }
 }
