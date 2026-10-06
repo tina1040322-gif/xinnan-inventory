@@ -63,6 +63,7 @@
     <div id="productName" class="name"></div>
     <div id="productCode" class="code"></div>
     <div id="productPrice" class="price"></div>
+    <div id="batchTotalHint" class="hint" style="margin-top:10px">正在取得本批累計…</div>
 
     <label for="qty" style="margin-top:14px">本次盤點數量</label>
     <div class="qtyRow">
@@ -137,9 +138,59 @@ function chooseDuplicate(list){
   return list[n-1]||null;
 }
 
+function getBatchTotalFromCloud(p){
+  return new Promise((resolve,reject)=>{
+    const cb="xinnanCb_"+Date.now()+"_"+Math.random().toString(36).slice(2);
+    const s=document.createElement("script");
+    let done=false;
+    const cleanup=()=>{
+      if(done)return;done=true;
+      try{delete window[cb]}catch(e){window[cb]=undefined}
+      if(s.parentNode)s.parentNode.removeChild(s);
+    };
+    const timer=setTimeout(()=>{
+      cleanup();
+      reject(new Error("累計查詢逾時"));
+    },10000);
+    window[cb]=(data)=>{
+      clearTimeout(timer);
+      cleanup();
+      if(data&&data.ok) resolve(Number(data.batchTotal||0));
+      else reject(new Error((data&&data.error)||"累計查詢失敗"));
+    };
+    const params=new URLSearchParams({
+      action:"getBatchTotal",
+      batch:localBatch(),
+      barcode:p.barcode||"",
+      productName:p.name,
+      callback:cb,
+      _:String(Date.now())
+    });
+    s.src=CLOUD_ENDPOINT+"?"+params.toString();
+    s.onerror=()=>{
+      clearTimeout(timer);
+      cleanup();
+      reject(new Error("無法連線累計服務"));
+    };
+    document.body.appendChild(s);
+  });
+}
+
 function showProductObject(p,method="條碼掃描"){
   if(!p)return;
   currentProduct=p;currentMethod=method;scanPaused=true;
+  $("batchTotalHint").className="hint";
+  $("batchTotalHint").textContent="☁️ 正在取得這個商品的本批累計…";
+  getBatchTotalFromCloud(p).then(total=>{
+    if(currentProduct!==p)return;
+    $("batchTotalHint").className="hint";
+    $("batchTotalHint").innerHTML=total>0
+      ? "本批目前已盤：<b style=\"font-size:22px\">"+total+"</b>"
+      : "本批目前尚未盤點";
+  }).catch(()=>{
+    if(currentProduct!==p)return;
+    $("batchTotalHint").textContent="⚠️ 暫時無法取得中央累計，但仍可先盤點。";
+  });
   $("productName").textContent=p.name;
   $("productCode").textContent=p.barcode?("條碼："+p.barcode):"無條碼商品";
   $("productPrice").textContent="VIP價："+(p.vip==null?"—":p.vip);
@@ -166,7 +217,7 @@ function localBatch(){
 async function sendCountToCloud(p,qty,method){
   const status=$("cloudStatus");
   status.className="status";
-  status.textContent="☁️ 正在送出："+p.name+" × "+qty+"…";
+  status.textContent="☁️ 正在寫入正式盤點："+p.name+" × "+qty+"…";
   const payload={
     employee:$("employee").value.trim(),
     barcode:p.barcode||"",
@@ -183,15 +234,16 @@ async function sendCountToCloud(p,qty,method){
       body:JSON.stringify(payload),
       redirect:"follow"
     });
+    await new Promise(r=>setTimeout(r,250));
+    const total=await getBatchTotalFromCloud(p);
     status.className="status ok";
-    status.textContent="☁️ 已送出正式盤點："+p.name+" × "+qty+"；資料會寫入 INITIAL-20261006 批次。";
+    status.innerHTML="✅ 本次加入 <b>"+qty+"</b>｜本批累計 <b style=\"font-size:20px\">"+total+"</b><br>"+esc(p.name);
   }catch(err){
     status.className="status bad";
-    status.textContent="❌ 雲端送出失敗：這筆沒有完成正式盤點，請重新整理後再試。";
+    status.textContent="⚠️ 已嘗試送出，但目前無法確認中央累計。請先不要重複送出同一筆，稍後重新掃此商品查看『本批目前已盤』。";
     console.error(err);
   }
 }
-
 function addCurrent(qty){
   if(!currentProduct)return;
   qty=Math.floor(Number(qty)||0);
