@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <title>信男藥局｜手機盤點</title>
+  <script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#f4f7fb;color:#172033;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",Arial,sans-serif}
+    .wrap{max-width:640px;margin:auto;padding:16px 14px 48px}
+    .badge{display:inline-block;background:#ccfbf1;color:#0f766e;padding:6px 11px;border-radius:999px;font-size:13px;font-weight:700}
+    h1{font-size:24px;margin:10px 0 16px}
+    .card{background:white;border-radius:18px;padding:16px;margin-top:14px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
+    label{display:block;font-weight:800;margin-bottom:8px}
+    input{width:100%;height:50px;border:1px solid #d6dee9;border-radius:12px;padding:0 14px;font-size:17px}
+    button{width:100%;min-height:54px;border:0;border-radius:13px;margin-top:10px;font-size:18px;font-weight:800}
+    .primary{background:#0f766e;color:white}
+    .secondary{background:#e2e8f0;color:#172033}
+    .danger{background:#fee2e2;color:#b91c1c}
+    #videoWrap{position:relative;margin-top:12px;border-radius:16px;overflow:hidden;background:#111827;display:none}
+    video{width:100%;display:block;aspect-ratio:4/3;object-fit:cover}
+    .scanBox{position:absolute;left:8%;right:8%;top:36%;height:28%;border:3px solid #22c55e;border-radius:14px;box-shadow:0 0 0 999px rgba(0,0,0,.18);pointer-events:none}
+    .scanLine{position:absolute;left:12%;right:12%;top:50%;height:2px;background:#22c55e;box-shadow:0 0 10px #22c55e;pointer-events:none}
+    .status{font-size:14px;line-height:1.6;color:#64748b;margin-top:9px}
+    .ok{color:#059669;font-weight:800}.bad{color:#dc2626;font-weight:800}
+    .result{display:none;border-left:5px solid #0f766e}
+    .name{font-size:21px;font-weight:900;margin-top:4px}
+    .code{font-size:14px;color:#64748b;margin-top:5px}
+    .qty{font-size:38px;color:#2563eb;font-weight:900;margin-top:7px}
+    .hint{background:#eff6ff;color:#1e40af;border-radius:12px;padding:12px;font-size:14px;line-height:1.6;margin-top:12px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="badge">📷 GitHub Pages 即時掃碼測試</div>
+  <h1>信男藥局｜手機盤點</h1>
+
+  <div class="card">
+    <label for="employee">盤點人員</label>
+    <input id="employee" placeholder="例如：婷婷" autocomplete="name">
+  </div>
+
+  <div class="card">
+    <label>即時相機掃描</label>
+    <button id="startBtn" class="primary">📷 開啟後鏡頭開始掃描</button>
+    <button id="stopBtn" class="danger" style="display:none">停止相機</button>
+
+    <div id="videoWrap">
+      <video id="video" playsinline muted></video>
+      <div class="scanBox"></div>
+      <div class="scanLine"></div>
+    </div>
+
+    <div id="cameraStatus" class="status">第一次開啟時，請允許瀏覽器使用相機。</div>
+
+    <div class="hint">
+      測試商品：<b>科林頓金門一條根貼布7片</b><br>
+      條碼：<b>4715095854976</b><br>
+      相機開啟後，把條碼橫向放在綠色框內。
+    </div>
+  </div>
+
+  <div id="resultCard" class="card result">
+    <div class="status">最後辨識</div>
+    <div id="productName" class="name"></div>
+    <div id="productCode" class="code"></div>
+    <div id="productQty" class="qty"></div>
+    <div id="scanStatus" class="status"></div>
+  </div>
+
+  <div class="card">
+    <label for="manual">手動測試條碼</label>
+    <input id="manual" inputmode="numeric" placeholder="輸入條碼">
+    <button id="manualBtn" class="secondary">手動＋1</button>
+  </div>
+</div>
+
+<script>
+const PRODUCTS = {
+  "4715095854976": {name:"科林頓金門一條根貼布7片"}
+};
+
+const counts = {};
+let reader = null;
+let controls = null;
+let lockedCode = null;
+let lastSuccessAt = 0;
+let lastNoReadAt = 0;
+let audioCtx = null;
+
+const $ = id => document.getElementById(id);
+
+function beep(){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = 1150;
+    g.gain.value = 0.05;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.09);
+  }catch(e){}
+  if(navigator.vibrate) navigator.vibrate(70);
+}
+
+function addBarcode(code, source="相機"){
+  code = String(code || "").trim();
+  if(!code) return;
+
+  counts[code] = (counts[code] || 0) + 1;
+  const p = PRODUCTS[code];
+
+  $("resultCard").style.display = "block";
+  $("productName").textContent = p ? p.name : "⚠️ 測試主檔尚未收錄此商品";
+  $("productCode").textContent = "條碼：" + code;
+  $("productQty").textContent = "本次累計 " + counts[code];
+  $("scanStatus").className = "status " + (p ? "ok" : "bad");
+  $("scanStatus").textContent = p ? "✅ 辨識成功（目前先做本機測試，尚未寫入 Google Sheet）" : "已成功讀到條碼；下一步接完整商品主檔後即可辨識商品。";
+  beep();
+}
+
+async function startScanner(){
+  const emp = $("employee").value.trim();
+  if(!emp){
+    alert("請先輸入盤點人員姓名");
+    return;
+  }
+
+  $("cameraStatus").className = "status";
+  $("cameraStatus").textContent = "正在開啟後鏡頭……";
+
+  try{
+    if(!window.ZXingBrowser) throw new Error("掃碼程式載入失敗，請重新整理頁面");
+
+    reader = new ZXingBrowser.BrowserMultiFormatReader();
+
+    $("videoWrap").style.display = "block";
+    $("startBtn").style.display = "none";
+    $("stopBtn").style.display = "block";
+
+    const devices = await ZXingBrowser.BrowserCodeReader.listVideoInputDevices();
+    let deviceId = undefined;
+
+    if(devices && devices.length){
+      const back = devices.find(d => /back|rear|environment|後|背/i.test(d.label));
+      deviceId = (back || devices[devices.length - 1]).deviceId;
+    }
+
+    controls = await reader.decodeFromVideoDevice(deviceId, "video", (result, error) => {
+      const now = Date.now();
+
+      if(result){
+        const code = result.getText ? result.getText() : String(result.text || "");
+        if(!code) return;
+
+        // 同一個條碼留在畫面裡時，不重複狂加。
+        // 條碼離開鏡頭一小段時間後，才允許再次掃同一條碼。
+        if(lockedCode === code) return;
+
+        lockedCode = code;
+        lastSuccessAt = now;
+        addBarcode(code, "相機");
+
+        $("cameraStatus").className = "status ok";
+        $("cameraStatus").textContent = "✅ 掃到 " + code + "。把商品移出綠框後可繼續掃下一個。";
+      } else {
+        lastNoReadAt = now;
+        if(lockedCode && now - lastSuccessAt > 650){
+          lockedCode = null;
+        }
+      }
+    });
+
+    $("cameraStatus").className = "status ok";
+    $("cameraStatus").textContent = "✅ 相機已開啟，請將條碼放入綠色框內。";
+  }catch(err){
+    $("cameraStatus").className = "status bad";
+    $("cameraStatus").textContent = "❌ 無法開啟相機：" + (err && err.message ? err.message : err);
+    $("videoWrap").style.display = "none";
+    $("startBtn").style.display = "block";
+    $("stopBtn").style.display = "none";
+  }
+}
+
+function stopScanner(){
+  try{
+    if(controls) controls.stop();
+  }catch(e){}
+  controls = null;
+  reader = null;
+  lockedCode = null;
+  $("videoWrap").style.display = "none";
+  $("startBtn").style.display = "block";
+  $("stopBtn").style.display = "none";
+  $("cameraStatus").className = "status";
+  $("cameraStatus").textContent = "相機已停止。";
+}
+
+$("startBtn").addEventListener("click", startScanner);
+$("stopBtn").addEventListener("click", stopScanner);
+
+$("manualBtn").addEventListener("click", () => {
+  if(!$("employee").value.trim()){
+    alert("請先輸入盤點人員姓名");
+    return;
+  }
+  addBarcode($("manual").value, "手動");
+  $("manual").value = "";
+});
+
+$("manual").addEventListener("keydown", e => {
+  if(e.key === "Enter"){
+    e.preventDefault();
+    $("manualBtn").click();
+  }
+});
+
+window.addEventListener("pagehide", stopScanner);
+</script>
+</body>
+</html>
