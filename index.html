@@ -38,7 +38,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="badge">✅ 正式盤點模式 v3</div>
+  <div class="badge">✅ 正式盤點模式 v4</div>
   <h1>信男藥局｜手機盤點</h1>
 
   <div class="card">
@@ -76,6 +76,32 @@
       <button id="quickBtn" class="secondary">快速＋1</button>
       <button id="confirmBtn" class="blue">確認加入</button>
     </div>
+
+    <button id="correctionBtn" class="secondary" style="margin-top:10px">✏️ 盤點更正</button>
+
+    <div id="correctionPanel" style="display:none;margin-top:12px;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#f8fafc">
+      <div style="font-weight:700;margin-bottom:6px">盤點更正</div>
+      <div class="status" style="margin-bottom:10px">請輸入「差額」，不是重新輸入總數。</div>
+
+      <div class="actionGrid">
+        <button id="overBtn" class="danger" type="button">多算了 → 扣除</button>
+        <button id="underBtn" class="secondary" type="button">少算了 → 補上</button>
+      </div>
+
+      <label for="correctionQty" style="margin-top:12px">更正數量</label>
+      <input id="correctionQty" type="number" inputmode="numeric" min="1" value="1">
+
+      <label for="correctionNote" style="margin-top:10px">備註（選填）</label>
+      <input id="correctionNote" placeholder="例如：剛才手滑輸入50，實際應為5">
+
+      <div id="correctionPreview" class="status" style="margin-top:10px">目前選擇：多算了，會從累計扣除。</div>
+
+      <div class="actionGrid" style="margin-top:10px">
+        <button id="confirmCorrectionBtn" class="blue" type="button">確認更正</button>
+        <button id="cancelCorrectionBtn" class="secondary" type="button">取消更正</button>
+      </div>
+    </div>
+
     <button id="cancelBtn" class="danger">取消這筆</button>
   </div>
 
@@ -113,7 +139,7 @@ for(const p of PRODUCT_LIST){
 }
 
 const counts={};
-let reader=null,controls=null,lockedCode=null,lastSuccessAt=0,currentProduct=null,currentMethod="條碼掃描",scanPaused=false,audioCtx=null;
+let reader=null,controls=null,lockedCode=null,lastSuccessAt=0,currentProduct=null,currentMethod="條碼掃描",currentBatchTotal=0,correctionSign=-1,scanPaused=false,audioCtx=null;
 const $=id=>document.getElementById(id);
 
 $("employee").value=localStorage.getItem("xinnan_emp")||"";
@@ -201,11 +227,16 @@ function getBatchTotalFromCloud(p){
 
 function showProductObject(p,method="條碼掃描"){
   if(!p)return;
-  currentProduct=p;currentMethod=method;scanPaused=true;
+  currentProduct=p;currentMethod=method;currentBatchTotal=0;correctionSign=-1;scanPaused=true;
+  $("correctionPanel").style.display="none";
+  $("correctionQty").value=1;
+  $("correctionNote").value="";
+  $("correctionPreview").textContent="目前選擇：多算了，會從累計扣除。";
   $("batchTotalHint").className="hint";
   $("batchTotalHint").textContent="☁️ 正在取得這個商品的本批累計…";
   getBatchTotalFromCloud(p).then(total=>{
     if(currentProduct!==p)return;
+    currentBatchTotal=Number(total||0);
     $("batchTotalHint").className="hint";
     $("batchTotalHint").innerHTML=total>0
       ? "本批目前已盤：<b style=\"font-size:22px\">"+total+"</b>"
@@ -247,7 +278,9 @@ async function sendCountToCloud(p,qty,method){
     productName:p.name,
     qty:qty,
     inputMethod:method,
-    batch:localBatch()
+    batch:localBatch(),
+    recordType:"盤點",
+    note:""
   });
   const total=Number(result.batchTotal||0);
   status.className="status ok";
@@ -286,8 +319,64 @@ async function addCurrent(qty){
   }
 }
 
+async function submitCorrection(){
+  if(!currentProduct||savingCount)return;
+
+  const amount=Math.floor(Number($("correctionQty").value)||0);
+  if(amount<1){
+    alert("請輸入正確的更正數量");
+    return;
+  }
+
+  const signedQty=correctionSign*amount;
+  if(correctionSign<0 && amount>currentBatchTotal){
+    alert("扣除數量不能大於目前本批累計 "+currentBatchTotal);
+    return;
+  }
+
+  const actionText=correctionSign<0 ? "扣除" : "補上";
+  const afterTotal=currentBatchTotal+signedQty;
+  if(!confirm("確認"+actionText+" "+amount+"？\n目前累計："+currentBatchTotal+"\n更正後："+afterTotal)){
+    return;
+  }
+
+  const p=currentProduct;
+  const note=$("correctionNote").value.trim();
+
+  savingCount=true;
+  ["quickBtn","confirmBtn","cancelBtn","correctionBtn","confirmCorrectionBtn","cancelCorrectionBtn","overBtn","underBtn"].forEach(id=>$(id).disabled=true);
+
+  try{
+    const result=await cloudFrameRequest({},{
+      employee:$("employee").value.trim(),
+      barcode:p.barcode||"",
+      productName:p.name,
+      qty:signedQty,
+      inputMethod:correctionSign<0 ? "盤點更正-扣除" : "盤點更正-補上",
+      batch:localBatch(),
+      recordType:"盤點更正",
+      note:note || (correctionSign<0 ? "多算更正" : "少算更正")
+    });
+
+    const total=Number(result.batchTotal||0);
+    currentBatchTotal=total;
+    const status=$("cloudStatus");
+    status.className="status ok";
+    status.innerHTML="✅ 更正完成：<b>"+(signedQty>0?"+":"")+signedQty+"</b>｜本批累計 <b style=\"font-size:20px\">"+total+"</b><br>"+esc(p.name);
+    finishProduct();
+  }catch(err){
+    const status=$("cloudStatus");
+    status.className="status bad";
+    status.textContent="❌ 更正目前無法確認寫入，商品畫面會保留，請先不要重複按。";
+    console.error(err);
+  }finally{
+    savingCount=false;
+    ["quickBtn","confirmBtn","cancelBtn","correctionBtn","confirmCorrectionBtn","cancelCorrectionBtn","overBtn","underBtn"].forEach(id=>$(id).disabled=false);
+  }
+}
+
 function finishProduct(){
-  currentProduct=null;scanPaused=false;$("productCard").style.display="none";lockedCode=null;
+  currentProduct=null;currentBatchTotal=0;scanPaused=false;$("correctionPanel").style.display="none";$("productCard").style.display="none";lockedCode=null;
   if($("videoWrap").style.display!=="none"){
     $("cameraStatus").className="status ok";
     $("cameraStatus").textContent="✅ 可以繼續掃下一個商品";
@@ -338,6 +427,20 @@ function stopScanner(){
   $("videoWrap").style.display="none";$("startBtn").style.display="block";$("stopBtn").style.display="none";
   $("cameraStatus").className="status";$("cameraStatus").textContent="相機已停止";
 }
+
+$("correctionBtn").onclick=()=>{
+  $("correctionPanel").style.display=$("correctionPanel").style.display==="none"?"block":"none";
+};
+$("overBtn").onclick=()=>{
+  correctionSign=-1;
+  $("correctionPreview").textContent="目前選擇：多算了，會從累計扣除。";
+};
+$("underBtn").onclick=()=>{
+  correctionSign=1;
+  $("correctionPreview").textContent="目前選擇：少算了，會補進累計。";
+};
+$("confirmCorrectionBtn").onclick=submitCorrection;
+$("cancelCorrectionBtn").onclick=()=>{$("correctionPanel").style.display="none";};
 
 $("startBtn").onclick=startScanner;$("stopBtn").onclick=stopScanner;
 $("minusBtn").onclick=()=>{$("qty").value=Math.max(1,(Number($("qty").value)||1)-1)};
