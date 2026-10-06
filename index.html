@@ -139,7 +139,7 @@ for(const p of PRODUCT_LIST){
 }
 
 const counts={};
-let reader=null,controls=null,lockedCode=null,lastSuccessAt=0,currentProduct=null,currentMethod="條碼掃描",currentBatchTotal=0,correctionSign=-1,scanPaused=false,audioCtx=null;
+let reader=null,controls=null,lockedCode=null,lastSuccessAt=0,currentProduct=null,currentMethod="條碼掃描",currentBatchTotal=null,correctionSign=-1,scanPaused=false,audioCtx=null;
 const $=id=>document.getElementById(id);
 
 $("employee").value=localStorage.getItem("xinnan_emp")||"";
@@ -227,7 +227,7 @@ function getBatchTotalFromCloud(p){
 
 function showProductObject(p,method="條碼掃描"){
   if(!p)return;
-  currentProduct=p;currentMethod=method;currentBatchTotal=0;correctionSign=-1;scanPaused=true;
+  currentProduct=p;currentMethod=method;currentBatchTotal=null;correctionSign=-1;scanPaused=true;
   $("correctionPanel").style.display="none";
   $("correctionQty").value=1;
   $("correctionNote").value="";
@@ -322,6 +322,11 @@ async function addCurrent(qty){
 async function submitCorrection(){
   if(!currentProduct||savingCount)return;
 
+  if(currentBatchTotal===null){
+    alert("中央累計還沒讀取完成，請稍等一下再更正。");
+    return;
+  }
+
   const amount=Math.floor(Number($("correctionQty").value)||0);
   if(amount<1){
     alert("請輸入正確的更正數量");
@@ -376,7 +381,7 @@ async function submitCorrection(){
 }
 
 function finishProduct(){
-  currentProduct=null;currentBatchTotal=0;scanPaused=false;$("correctionPanel").style.display="none";$("productCard").style.display="none";lockedCode=null;
+  currentProduct=null;currentBatchTotal=null;scanPaused=false;$("correctionPanel").style.display="none";$("productCard").style.display="none";lockedCode=null;
   if($("videoWrap").style.display!=="none"){
     $("cameraStatus").className="status ok";
     $("cameraStatus").textContent="✅ 可以繼續掃下一個商品";
