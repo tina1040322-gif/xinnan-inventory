@@ -38,7 +38,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="badge">✅ 正式盤點模式 v4</div>
+  <div class="badge">✅ 正式盤點模式 v5</div>
   <h1>信男藥局｜手機盤點</h1>
 
   <div class="card">
@@ -110,6 +110,36 @@
     <input id="search" placeholder="至少輸入 2 個字，例如：樂伊妥">
     <div id="searchStatus" class="status">也可以搜尋有條碼的商品。</div>
     <div id="searchResults" class="searchResults"></div>
+    <button id="openAddProductBtn" class="secondary" type="button">＋ 找不到？新增商品</button>
+  </div>
+
+  <div id="addProductCard" class="card" style="display:none;border-left:5px solid #2563eb">
+    <div class="name" style="font-size:19px">＋ 手動新增商品</div>
+    <div class="status">適合口罩、特殊花色或原始商品檔沒有的品項。新增後會直接進入盤點。</div>
+
+    <label for="newProductName" style="margin-top:14px">商品品名 *</label>
+    <input id="newProductName" placeholder="例如：成人醫療口罩－小熊粉色">
+
+    <label for="newBarcode" style="margin-top:12px">國際條碼（沒有可留白）</label>
+    <input id="newBarcode" inputmode="numeric" placeholder="有條碼就掃入或輸入">
+
+    <div class="actionGrid" style="margin-top:12px">
+      <div>
+        <label for="newCost">成本（選填）</label>
+        <input id="newCost" type="number" inputmode="decimal" min="0" step="0.01" placeholder="可留白">
+      </div>
+      <div>
+        <label for="newVip">VIP價（選填）</label>
+        <input id="newVip" type="number" inputmode="decimal" min="0" step="0.01" placeholder="可留白">
+      </div>
+    </div>
+
+    <div id="addProductStatus" class="status">新增前會先檢查條碼及重複品名。</div>
+
+    <div class="actionGrid">
+      <button id="saveNewProductBtn" class="blue" type="button">儲存並開始盤點</button>
+      <button id="cancelAddProductBtn" class="secondary" type="button">取消</button>
+    </div>
   </div>
 
   <div class="card">
@@ -216,6 +246,117 @@ function cloudFrameRequest(params={}, formFields=null){
   });
 }
 
+function normalizeCloudProduct(p){
+  return {
+    barcode:String(p&&p.barcode||""),
+    name:String(p&&p.name||""),
+    vip:(p&&p.vip!==""&&p&&p.vip!=null)?Number(p.vip):null,
+    mode:String(p&&p.mode||((p&&p.barcode)?"條碼掃描":"搜尋品名"))
+  };
+}
+
+function registerDynamicProduct(raw){
+  const p=normalizeCloudProduct(raw);
+  if(!p.name)return p;
+
+  const exists=PRODUCT_LIST.some(x=>
+    String(x.barcode||"")===p.barcode &&
+    String(x.name||"")===p.name
+  );
+  if(!exists)PRODUCT_LIST.push(p);
+
+  if(p.barcode){
+    if(!BARCODE_MAP.has(p.barcode))BARCODE_MAP.set(p.barcode,[]);
+    const list=BARCODE_MAP.get(p.barcode);
+    if(!list.some(x=>String(x.name||"")===p.name))list.push(p);
+  }
+  return p;
+}
+
+function findBarcodeFromCloud(code){
+  return cloudFrameRequest({
+    action:"findBarcodeFrame",
+    barcode:String(code||"").trim()
+  }).then(data=>(data.products||[]).map(registerDynamicProduct));
+}
+
+function searchProductsFromCloud(q){
+  return cloudFrameRequest({
+    action:"searchProductsFrame",
+    q:String(q||"").trim()
+  }).then(data=>(data.products||[]).map(registerDynamicProduct));
+}
+
+function openAddProduct(barcode="",suggestedName=""){
+  if(!$("employee").value.trim()){
+    alert("請先輸入盤點人員姓名");
+    return;
+  }
+  $("newBarcode").value=String(barcode||"");
+  $("newProductName").value=String(suggestedName||"");
+  $("newCost").value="";
+  $("newVip").value="";
+  $("addProductStatus").className="status";
+  $("addProductStatus").textContent="新增前會先檢查條碼及重複品名。";
+  $("addProductCard").style.display="block";
+  $("addProductCard").scrollIntoView({behavior:"smooth",block:"center"});
+  setTimeout(()=>$("newProductName").focus(),250);
+}
+
+function closeAddProduct(){
+  $("addProductCard").style.display="none";
+}
+
+async function saveNewProduct(){
+  const employee=$("employee").value.trim();
+  const productName=$("newProductName").value.trim();
+  const barcode=$("newBarcode").value.trim();
+  const cost=$("newCost").value.trim();
+  const vip=$("newVip").value.trim();
+
+  if(!employee){alert("請先輸入盤點人員姓名");return}
+  if(!productName){alert("請輸入商品品名");return}
+
+  const btn=$("saveNewProductBtn");
+  btn.disabled=true;
+  $("cancelAddProductBtn").disabled=true;
+  $("addProductStatus").className="status";
+  $("addProductStatus").textContent="☁️ 正在檢查並新增商品…";
+
+  try{
+    const result=await cloudFrameRequest({},{
+      action:"addProduct",
+      employee,
+      barcode,
+      productName,
+      cost,
+      vip
+    });
+
+    const p=registerDynamicProduct(result.product||{
+      barcode,
+      name:productName,
+      vip:vip===""?null:Number(vip),
+      mode:barcode?"條碼掃描":"搜尋品名"
+    });
+
+    $("addProductStatus").className="status ok";
+    $("addProductStatus").textContent="✅ 商品已新增，現在可以直接盤點。";
+    closeAddProduct();
+    $("search").value="";
+    $("searchResults").innerHTML="";
+    $("searchStatus").textContent="商品已新增到中央商品主檔。";
+    $("manual").value="";
+    showProductObject(p,"手動新增商品");
+  }catch(err){
+    $("addProductStatus").className="status bad";
+    $("addProductStatus").textContent="❌ "+(err&&err.message?err.message:"新增商品失敗");
+  }finally{
+    btn.disabled=false;
+    $("cancelAddProductBtn").disabled=false;
+  }
+}
+
 function getBatchTotalFromCloud(p){
   return cloudFrameRequest({
     action:"getBatchTotalFrame",
@@ -253,16 +394,40 @@ function showProductObject(p,method="條碼掃描"){
   $("productCard").scrollIntoView({behavior:"smooth",block:"center"});
   beep();
 }
-function showBarcode(code){
-  const list=BARCODE_MAP.get(String(code||"").trim());
+async function showBarcode(code){
+  code=String(code||"").trim();
+  if(!code)return;
+
+  let list=BARCODE_MAP.get(code);
+
   if(!list||!list.length){
-    $("cameraStatus").className="status bad";
-    $("cameraStatus").textContent="⚠️ 條碼有讀到，但商品主檔找不到："+code;
+    scanPaused=true;
+    $("cameraStatus").className="status";
+    $("cameraStatus").textContent="☁️ 本機沒有這個條碼，正在查中央商品主檔："+code;
+
+    try{
+      list=await findBarcodeFromCloud(code);
+    }catch(err){
+      scanPaused=false;
+      lockedCode=null;
+      $("cameraStatus").className="status bad";
+      $("cameraStatus").textContent="❌ 暫時無法查中央商品主檔，請稍後再試。";
+      return;
+    }
+  }
+
+  if(!list||!list.length){
+    scanPaused=false;
     lockedCode=null;
+    $("cameraStatus").className="status bad";
+    $("cameraStatus").textContent="⚠️ 中央商品主檔也找不到："+code+"，請新增商品。";
+    openAddProduct(code,"");
     return;
   }
+
   const p=chooseDuplicate(list);
-  if(p)showProductObject(p,"條碼掃描"); else {scanPaused=false;lockedCode=null;}
+  if(p)showProductObject(p,"條碼掃描");
+  else {scanPaused=false;lockedCode=null;}
 }
 function localBatch(){
   return "INITIAL-20261006";
@@ -462,27 +627,66 @@ $("manualBtn").onclick=()=>{
 $("manual").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("manualBtn").click()}});
 
 let searchTimer=null;
+
+function renderSearchResults(found,label){
+  const box=$("searchResults");
+  $("searchStatus").textContent=found.length
+    ? ((label||"找到")+" "+found.length+" 筆（最多顯示 30 筆）")
+    : "找不到商品，可以使用下方「新增商品」。";
+
+  box.innerHTML=found.map((p,i)=>
+    '<div class="searchItem"><div><div class="itemName">'+esc(p.name)+'</div><div class="small">'+esc(p.barcode||"無條碼")+'｜VIP '+(p.vip==null?"—":p.vip)+'</div></div><button class="secondary" data-i="'+i+'">選擇</button></div>'
+  ).join("");
+
+  box.querySelectorAll("button").forEach(btn=>{
+    btn.onclick=()=>showProductObject(found[Number(btn.dataset.i)],"品名搜尋");
+  });
+}
+
 $("search").addEventListener("input",()=>{
   clearTimeout(searchTimer);
-  searchTimer=setTimeout(()=>{
-    const q=$("search").value.trim().toLowerCase();
+
+  searchTimer=setTimeout(async()=>{
+    const raw=$("search").value.trim();
+    const q=raw.toLowerCase();
     const box=$("searchResults");
     box.innerHTML="";
-    if(q.length<2){$("searchStatus").textContent="至少輸入 2 個字";return}
-    const found=[];
-    for(const p of PRODUCT_LIST){
-      if(p.name.toLowerCase().includes(q)){found.push(p);if(found.length>=30)break}
+
+    if(q.length<2){
+      $("searchStatus").textContent="至少輸入 2 個字";
+      return;
     }
-    $("searchStatus").textContent=found.length?("找到 "+found.length+" 筆（最多顯示 30 筆）"):"找不到商品";
-    box.innerHTML=found.map((p,i)=>
-      '<div class="searchItem"><div><div class="itemName">'+esc(p.name)+'</div><div class="small">'+esc(p.barcode||"無條碼")+'｜VIP '+(p.vip==null?"—":p.vip)+'</div></div><button class="secondary" data-i="'+i+'">選擇</button></div>'
-    ).join("");
-    box.querySelectorAll("button").forEach(btn=>{
-      btn.onclick=()=>showProductObject(found[Number(btn.dataset.i)],"品名搜尋");
-    });
-  },180);
+
+    const local=[];
+    for(const p of PRODUCT_LIST){
+      if(String(p.name||"").toLowerCase().includes(q)){
+        local.push(p);
+        if(local.length>=30)break;
+      }
+    }
+
+    if(local.length){
+      renderSearchResults(local,"本機找到");
+      return;
+    }
+
+    $("searchStatus").textContent="☁️ 本機找不到，正在搜尋中央商品主檔…";
+
+    try{
+      const cloud=await searchProductsFromCloud(raw);
+      renderSearchResults(cloud,cloud.length?"中央找到":"");
+    }catch(err){
+      $("searchStatus").textContent="⚠️ 中央搜尋暫時失敗，可以直接新增商品。";
+    }
+  },250);
 });
 
+$("openAddProductBtn").onclick=()=>{
+  openAddProduct("",$("search").value.trim());
+};
+
+$("saveNewProductBtn").onclick=saveNewProduct;
+$("cancelAddProductBtn").onclick=closeAddProduct;
 window.addEventListener("pagehide",stopScanner);
 </script>
 </body>
