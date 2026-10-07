@@ -27,6 +27,15 @@
     .qtyRow{display:grid;grid-template-columns:52px 1fr 52px;gap:8px;align-items:center;margin-top:12px}
     .qtyRow button{margin:0;font-size:24px;min-height:50px}.qtyRow input{text-align:center;font-size:24px;font-weight:900}
     .actionGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .packagePanel{display:none;margin-top:12px;padding:12px;border:1px solid #c4b5fd;border-radius:14px;background:#faf5ff}
+    .packageTitle{font-size:15px;font-weight:900;color:#6d28d9}
+    .packageHint{font-size:12px;color:#6b7280;line-height:1.5;margin-top:4px}
+    .packageItem{margin-top:10px;padding-top:10px;border-top:1px solid #e9d5ff}
+    .packageItem:first-of-type{border-top:0}
+    .packageQuick{background:#7c3aed;color:#fff}
+    .packageCustom{display:grid;grid-template-columns:1fr 110px;gap:8px;align-items:center;margin-top:8px}
+    .packageCustom button{margin:0;min-height:48px;background:#ede9fe;color:#6d28d9}
+    .packageMeta{font-size:11px;color:#6b7280;margin-top:5px}
     .summary{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{background:#f8fafc;border-radius:13px;padding:12px;text-align:center}.metric b{font-size:26px;display:block}
     .list{margin-top:10px}.item{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #eef2f7}.item:first-child{border-top:0}.itemName{font-weight:700}.itemQty{font-weight:900;color:#2563eb;white-space:nowrap}
     .hint{background:#eff6ff;color:#1e40af;border-radius:12px;padding:12px;font-size:14px;line-height:1.6;margin-top:12px}
@@ -38,7 +47,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="badge">✅ 正式盤點模式 v5</div>
+  <div class="badge">✅ 正式盤點模式 v6｜通用包裝換算</div>
   <h1>信男藥局｜手機盤點</h1>
 
   <div class="card">
@@ -65,7 +74,13 @@
     <div id="productPrice" class="price"></div>
     <div id="batchTotalHint" class="hint" style="margin-top:10px">正在取得本批累計…</div>
 
-    <label for="qty" style="margin-top:14px">本次盤點數量</label>
+    <div id="packagePanel" class="packagePanel">
+      <div class="packageTitle">📦 這個商品有包裝換算</div>
+      <div id="packageHint" class="packageHint">正在讀取 POS 對照表…</div>
+      <div id="packageOptions"></div>
+    </div>
+
+    <label id="qtyLabel" for="qty" style="margin-top:14px">本次盤點數量</label>
     <div class="qtyRow">
       <button id="minusBtn" class="secondary">−</button>
       <input id="qty" type="number" inputmode="numeric" min="1" value="1">
@@ -169,7 +184,7 @@ for(const p of PRODUCT_LIST){
 }
 
 const counts={};
-let reader=null,controls=null,lockedCode=null,lastSuccessAt=0,currentProduct=null,currentMethod="條碼掃描",currentBatchTotal=null,correctionSign=-1,scanPaused=false,audioCtx=null;
+let reader=null,controls=null,lockedCode=null,lastSuccessAt=0,currentProduct=null,currentMethod="條碼掃描",currentBatchTotal=null,currentPackageData=null,correctionSign=-1,scanPaused=false,audioCtx=null;
 const $=id=>document.getElementById(id);
 
 $("employee").value=localStorage.getItem("xinnan_emp")||"";
@@ -366,9 +381,99 @@ function getBatchTotalFromCloud(p){
   }).then(data=>Number(data.batchTotal||0));
 }
 
+function getPackageOptionsFromCloud(p){
+  return cloudFrameRequest({
+    action:"getPackageOptionsFrame",
+    barcode:p.barcode||"",
+    productName:p.name
+  });
+}
+
+function singleUnitText(unit){
+  const u=String(unit||"個");
+  return ["罐","瓶","包","粒","片","支","個"].includes(u) ? ("單"+u) : u;
+}
+
+function renderPackageOptions(data){
+  currentPackageData=data||null;
+  const panel=$("packagePanel");
+  const box=$("packageOptions");
+  const hint=$("packageHint");
+
+  box.innerHTML="";
+  panel.style.display="none";
+  $("qtyLabel").textContent="本次盤點數量";
+  $("quickBtn").textContent="快速＋1";
+
+  if(!data||!data.hasPackageVariants){
+    return;
+  }
+
+  const baseUnit=String(data.baseUnit||"個");
+  const packageOptions=(data.options||[]).filter(o=>Number(o.conversion)>1);
+
+  if(!packageOptions.length)return;
+
+  panel.style.display="block";
+  hint.textContent="庫存以「"+baseUnit+"」為基準；整箱、整盒等會自動換算成"+baseUnit+"數。";
+  $("qtyLabel").textContent="自訂"+baseUnit+"數量";
+  $("quickBtn").textContent="＋1 "+singleUnitText(baseUnit);
+
+  packageOptions.forEach((opt,index)=>{
+    const conv=Number(opt.conversion||0);
+    const unit=String(opt.unit||"整包裝");
+    const item=document.createElement("div");
+    item.className="packageItem";
+
+    const quick=document.createElement("button");
+    quick.type="button";
+    quick.className="packageQuick";
+    quick.textContent="＋1 "+unit+" ＝ "+conv+baseUnit;
+    quick.onclick=()=>addCurrent(
+      conv,
+      "包裝盤點-"+unit+"×1（"+conv+baseUnit+"）"
+    );
+    item.appendChild(quick);
+
+    const row=document.createElement("div");
+    row.className="packageCustom";
+
+    const input=document.createElement("input");
+    input.type="number";
+    input.inputMode="numeric";
+    input.min="1";
+    input.placeholder=unit+"數";
+
+    const add=document.createElement("button");
+    add.type="button";
+    add.textContent="加入";
+    add.onclick=()=>{
+      const n=Math.floor(Number(input.value)||0);
+      if(n<1){alert("請輸入正確的"+unit+"數");return}
+      addCurrent(
+        n*conv,
+        "包裝盤點-"+unit+"×"+n+"（"+(n*conv)+baseUnit+"）"
+      );
+    };
+
+    row.appendChild(input);
+    row.appendChild(add);
+    item.appendChild(row);
+
+    if(opt.posName){
+      const meta=document.createElement("div");
+      meta.className="packageMeta";
+      meta.textContent=opt.posName;
+      item.appendChild(meta);
+    }
+
+    box.appendChild(item);
+  });
+}
+
 function showProductObject(p,method="條碼掃描"){
   if(!p)return;
-  currentProduct=p;currentMethod=method;currentBatchTotal=null;correctionSign=-1;scanPaused=true;
+  currentProduct=p;currentMethod=method;currentBatchTotal=null;currentPackageData=null;correctionSign=-1;scanPaused=true;
   $("correctionPanel").style.display="none";
   $("correctionQty").value=1;
   $("correctionNote").value="";
@@ -386,6 +491,16 @@ function showProductObject(p,method="條碼掃描"){
     if(currentProduct!==p)return;
     $("batchTotalHint").textContent="⚠️ 暫時無法取得中央累計，但仍可先盤點。";
   });
+
+  renderPackageOptions(null);
+  getPackageOptionsFromCloud(p).then(data=>{
+    if(currentProduct!==p)return;
+    renderPackageOptions(data);
+  }).catch(()=>{
+    if(currentProduct!==p)return;
+    renderPackageOptions(null);
+  });
+
   $("productName").textContent=p.name;
   $("productCode").textContent=p.barcode?("條碼："+p.barcode):"無條碼商品";
   $("productPrice").textContent="VIP價："+(p.vip==null?"—":p.vip);
@@ -454,12 +569,12 @@ async function sendCountToCloud(p,qty,method){
 }
 
 let savingCount=false;
-async function addCurrent(qty){
+async function addCurrent(qty,methodOverride=null){
   if(!currentProduct||savingCount)return;
   qty=Math.floor(Number(qty)||0);
   if(qty<1){alert("請輸入正確數量");return}
   const p=currentProduct;
-  const method=currentMethod;
+  const method=methodOverride||currentMethod;
   savingCount=true;
   $("quickBtn").disabled=true;
   $("confirmBtn").disabled=true;
@@ -546,7 +661,7 @@ async function submitCorrection(){
 }
 
 function finishProduct(){
-  currentProduct=null;currentBatchTotal=null;scanPaused=false;$("correctionPanel").style.display="none";$("productCard").style.display="none";lockedCode=null;
+  currentProduct=null;currentBatchTotal=null;currentPackageData=null;scanPaused=false;renderPackageOptions(null);$("correctionPanel").style.display="none";$("productCard").style.display="none";lockedCode=null;
   if($("videoWrap").style.display!=="none"){
     $("cameraStatus").className="status ok";
     $("cameraStatus").textContent="✅ 可以繼續掃下一個商品";
