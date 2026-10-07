@@ -47,7 +47,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="badge">✅ 正式盤點模式 v6｜通用包裝換算</div>
+  <div class="badge">🧪 測試模式 v7｜尚未開始正式初盤</div>
   <h1>信男藥局｜手機盤點</h1>
 
   <div class="card">
@@ -163,7 +163,7 @@
       <div class="metric"><span>本次總數量</span><b id="totalCount">0</b></div>
     </div>
     <div id="resultList" class="list"></div>
-    <div id="cloudStatus" class="status" style="margin-top:12px">☁️ 正式盤點：每筆確認後會寫入 Google Sheet「盤點紀錄」。</div>
+    <div id="cloudStatus" class="status" style="margin-top:12px">🧪 目前僅測試：資料會寫入 TEST- 批次，不更新正式庫存。</div>
   </div>
 
   <div class="card">
@@ -545,13 +545,17 @@ async function showBarcode(code){
   else {scanPaused=false;lockedCode=null;}
 }
 function localBatch(){
-  return "INITIAL-20261006";
+  const d=new Date();
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,"0");
+  const day=String(d.getDate()).padStart(2,"0");
+  return "TEST-PREINITIAL-"+y+"-"+m+"-"+day;
 }
 
 async function sendCountToCloud(p,qty,method){
   const status=$("cloudStatus");
   status.className="status";
-  status.textContent="☁️ 正在寫入正式盤點："+p.name+" × "+qty+"…";
+  status.textContent="🧪 正在寫入測試盤點："+p.name+" × "+qty+"…";
   const result=await cloudFrameRequest({},{
     employee:$("employee").value.trim(),
     barcode:p.barcode||"",
