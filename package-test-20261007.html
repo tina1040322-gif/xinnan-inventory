@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <title>信男藥局｜通用包裝換算測試</title>
+  <script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#f4f7fb;color:#172033;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",Arial,sans-serif}
+    .wrap{max-width:680px;margin:auto;padding:16px 14px 70px}
+    .badge{display:inline-block;background:#fff7ed;color:#c2410c;padding:6px 11px;border-radius:999px;font-size:13px;font-weight:800}
+    h1{font-size:24px;margin:10px 0 8px}
+    .sub{font-size:14px;color:#64748b;line-height:1.6}
+    .card{background:#fff;border-radius:18px;padding:16px;margin-top:14px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
+    label{display:block;font-weight:800;margin-bottom:8px}
+    input{width:100%;height:50px;border:1px solid #d6dee9;border-radius:12px;padding:0 14px;font-size:18px}
+    button{width:100%;min-height:52px;border:0;border-radius:13px;margin-top:10px;font-size:17px;font-weight:800}
+    .primary{background:#0f766e;color:#fff}.secondary{background:#e2e8f0;color:#172033}.blue{background:#2563eb;color:#fff}.purple{background:#7c3aed;color:#fff}.danger{background:#fee2e2;color:#b91c1c}
+    #videoWrap{position:relative;margin-top:12px;border-radius:16px;overflow:hidden;background:#111827;display:none}
+    video{width:100%;display:block;aspect-ratio:4/3;object-fit:cover}
+    .scanBox{position:absolute;left:8%;right:8%;top:34%;height:32%;border:3px solid #22c55e;border-radius:14px;box-shadow:0 0 0 999px rgba(0,0,0,.18);pointer-events:none}
+    .scanLine{position:absolute;left:12%;right:12%;height:3px;background:#22ff72;box-shadow:0 0 10px #22ff72;pointer-events:none;animation:scanMove 1.6s linear infinite alternate}
+    @keyframes scanMove{from{top:38%}to{top:62%}}
+    .status{font-size:14px;line-height:1.6;color:#64748b;margin-top:9px}.ok{color:#059669;font-weight:800}.bad{color:#dc2626;font-weight:800}
+    .product{display:none;border-left:5px solid #0f766e}.name{font-size:21px;font-weight:900}.code{font-size:14px;color:#64748b;margin-top:5px}
+    .notice{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:12px;border-radius:12px;font-size:14px;line-height:1.6;margin-top:12px}
+    .packagePanel{display:none;margin-top:12px;padding:12px;border:1px solid #c4b5fd;border-radius:14px;background:#faf5ff}
+    .packageTitle{font-size:15px;font-weight:900;color:#6d28d9}
+    .packageHint{font-size:13px;color:#6b7280;line-height:1.5;margin-top:4px}
+    .packageItem{margin-top:10px;padding-top:10px;border-top:1px solid #e9d5ff}.packageItem:first-of-type{border-top:0}
+    .packageMeta{font-size:12px;color:#64748b;margin-top:5px}
+    .custom{display:grid;grid-template-columns:1fr 120px;gap:8px;align-items:center;margin-top:8px}.custom button{margin:0}
+    .qty{font-size:34px;font-weight:900;color:#2563eb;margin-top:8px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="badge">🧪 TEST-PACKAGE｜不更新正式庫存</div>
+  <h1>信男藥局｜通用包裝換算測試</h1>
+  <div class="sub">直接讀取「商品主檔＋POS對照表」的換算規則，不把品牌或箱數寫死在網頁。</div>
+
+  <div class="notice">
+    建議先測：<br>
+    亞培原味：070074124698 → 1箱＝24瓶<br>
+    力增飲紅豆：4713006700619 → 1箱＝18罐
+  </div>
+
+  <div class="card">
+    <label for="employee">盤點人員</label>
+    <input id="employee" placeholder="例如：婷婷" autocomplete="name">
+  </div>
+
+  <div class="card">
+    <label>① 即時相機掃描</label>
+    <button id="startBtn" class="primary">📷 開啟後鏡頭開始掃描</button>
+    <button id="stopBtn" class="danger" style="display:none">停止相機</button>
+    <div id="videoWrap">
+      <video id="video" playsinline muted></video>
+      <div class="scanBox"></div><div class="scanLine"></div>
+    </div>
+    <div id="cameraStatus" class="status">掃到任何商品後，會自動查中央商品主檔與包裝換算。</div>
+  </div>
+
+  <div class="card">
+    <label for="manual">② 手動輸入條碼</label>
+    <input id="manual" inputmode="numeric" placeholder="例如 070074124698">
+    <button id="manualBtn" class="secondary">查詢商品</button>
+  </div>
+
+  <div id="productCard" class="card product">
+    <div class="status">目前商品</div>
+    <div id="productName" class="name"></div>
+    <div id="productCode" class="code"></div>
+
+    <div id="packagePanel" class="packagePanel">
+      <div class="packageTitle">📦 包裝換算</div>
+      <div id="packageHint" class="packageHint"></div>
+      <div id="packageOptions"></div>
+    </div>
+
+    <div id="basePanel" style="margin-top:12px">
+      <button id="baseOneBtn" class="blue">＋1 基準單位</button>
+      <div class="custom">
+        <input id="baseQty" type="number" inputmode="numeric" min="1" placeholder="自訂基準單位數">
+        <button id="baseAddBtn" class="secondary">加入</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultCard" class="card" style="display:none">
+    <div class="status">本機本次累計（依商品分開）</div>
+    <div id="localTotal" class="qty"></div>
+    <div id="cloudStatus" class="status"></div>
+  </div>
+</div>
+
+<script>
+const CLOUD_ENDPOINT="https://script.google.com/macros/s/AKfycbxIkr5ficj-H6la69SfP7pDpIyJDIXYJAc_9cepsC6ty4i6HciMKx-O3rPKKd3dBtadVQ/exec";
+let reader=null,controls=null,scanPaused=false,lastCode="",currentProduct=null,currentPackage=null;
+const totals={};
+const $=id=>document.getElementById(id);
+
+$("employee").value=localStorage.getItem("xinnan_emp")||"";
+$("employee").addEventListener("change",()=>localStorage.setItem("xinnan_emp",$("employee").value.trim()));
+
+function batchName(){
+  const d=new Date(), y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+  return "TEST-PACKAGE-"+y+"-"+m+"-"+day;
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function cloudFrameRequest(params={},formFields=null){
+  return new Promise((resolve,reject)=>{
+    const requestId="req_"+Date.now()+"_"+Math.random().toString(36).slice(2);
+    const iframe=document.createElement("iframe"); iframe.name="xinnan_"+requestId; iframe.style.display="none"; document.body.appendChild(iframe);
+    let form=null,done=false;
+    const cleanup=()=>{if(done)return;done=true;window.removeEventListener("message",onMessage);if(form?.parentNode)form.parentNode.removeChild(form);if(iframe.parentNode)iframe.parentNode.removeChild(iframe)};
+    const timer=setTimeout(()=>{cleanup();reject(new Error("雲端回應逾時"))},15000);
+    const onMessage=e=>{const d=e.data;if(!d||d.source!=="xinnan-inventory"||d.requestId!==requestId)return;clearTimeout(timer);cleanup();d.ok?resolve(d):reject(new Error(d.error||"雲端操作失敗"))};
+    window.addEventListener("message",onMessage);
+    if(formFields){
+      form=document.createElement("form");form.method="POST";form.action=CLOUD_ENDPOINT;form.target=iframe.name;form.style.display="none";
+      for(const [k,v] of Object.entries({...formFields,responseMode:"postMessage",requestId})){const i=document.createElement("input");i.type="hidden";i.name=k;i.value=String(v??"");form.appendChild(i)}
+      document.body.appendChild(form);form.submit();
+    }else{
+      iframe.src=CLOUD_ENDPOINT+"?"+new URLSearchParams({...params,requestId,_:Date.now().toString()}).toString();
+    }
+  });
+}
+function normalizeProduct(p){return {barcode:String(p?.barcode||""),name:String(p?.name||""),vip:p?.vip==null?null:Number(p.vip)}}
+async function lookupBarcode(code){
+  code=String(code||"").trim();
+  if(!code)return;
+  $("cameraStatus").className="status";$("cameraStatus").textContent="☁️ 正在查中央商品主檔："+code;
+  try{
+    const found=await cloudFrameRequest({action:"findBarcodeFrame",barcode:code});
+    const list=(found.products||[]).map(normalizeProduct);
+    if(!list.length){$("cameraStatus").className="status bad";$("cameraStatus").textContent="❌ 中央商品主檔找不到："+code;return}
+    const p=list[0];
+    currentProduct=p;scanPaused=true;
+    $("productName").textContent=p.name;$("productCode").textContent="條碼："+p.barcode;$("productCard").style.display="block";
+    $("cameraStatus").className="status ok";$("cameraStatus").textContent="✅ 找到："+p.name;
+    await loadPackages(p);
+    $("productCard").scrollIntoView({behavior:"smooth",block:"center"});
+  }catch(err){
+    $("cameraStatus").className="status bad";$("cameraStatus").textContent="❌ 查詢失敗："+(err?.message||err);
+  }
+}
+async function loadPackages(p){
+  const panel=$("packagePanel"), box=$("packageOptions"), hint=$("packageHint");
+  box.innerHTML=""; panel.style.display="none"; currentPackage=null;
+  try{
+    const data=await cloudFrameRequest({action:"getPackageOptionsFrame",barcode:p.barcode,productName:p.name});
+    currentPackage=data;
+    const base=String(data.baseUnit||"個");
+    $("baseOneBtn").textContent="＋1 "+base;
+    $("baseQty").placeholder="自訂"+base+"數";
+    if(!data.hasPackageVariants){return}
+    const opts=(data.options||[]).filter(o=>Number(o.conversion)>1);
+    if(!opts.length)return;
+    panel.style.display="block";
+    hint.textContent="庫存以「"+base+"」為基準；下面包裝會自動換算。";
+    opts.forEach(opt=>{
+      const conv=Number(opt.conversion),unit=String(opt.unit||"整包裝");
+      const item=document.createElement("div");item.className="packageItem";
+      const btn=document.createElement("button");btn.className="purple";btn.textContent="＋1 "+unit+" ＝ "+conv+base;
+      btn.onclick=()=>saveQty(conv,"包裝盤點-"+unit+"×1（"+conv+base+"）");
+      item.appendChild(btn);
+      const row=document.createElement("div");row.className="custom";
+      const inp=document.createElement("input");inp.type="number";inp.inputMode="numeric";inp.min="1";inp.placeholder=unit+"數";
+      const add=document.createElement("button");add.className="secondary";add.textContent="加入";
+      add.onclick=()=>{const n=Math.floor(Number(inp.value)||0);if(n<1){alert("請輸入正確的"+unit+"數");return}saveQty(n*conv,"包裝盤點-"+unit+"×"+n+"（"+(n*conv)+base+"）")};
+      row.appendChild(inp);row.appendChild(add);item.appendChild(row);
+      if(opt.posName){const meta=document.createElement("div");meta.className="packageMeta";meta.textContent=opt.posName;item.appendChild(meta)}
+      box.appendChild(item);
+    });
+  }catch(err){
+    hint.textContent="⚠️ 包裝規則讀取失敗："+(err?.message||err);
+    panel.style.display="block";
+  }
+}
+async function saveQty(qty,method){
+  if(!currentProduct)return;
+  if(!$("employee").value.trim()){alert("請先輸入盤點人員姓名");return}
+  qty=Math.floor(Number(qty)||0);if(qty<1)return;
+  $("resultCard").style.display="block";$("cloudStatus").className="status";$("cloudStatus").textContent="☁️ 正在寫入 TEST-PACKAGE…";
+  try{
+    const r=await cloudFrameRequest({},{
+      employee:$("employee").value.trim(),barcode:currentProduct.barcode,productName:currentProduct.name,qty,
+      inputMethod:method,batch:batchName(),recordType:"盤點",note:"通用包裝換算測試"
+    });
+    const k=currentProduct.barcode+"|"+currentProduct.name;totals[k]=(totals[k]||0)+qty;
+    $("localTotal").textContent=totals[k]+" "+String(currentPackage?.baseUnit||"個");
+    $("cloudStatus").className="status ok";$("cloudStatus").textContent="✅ 寫入成功｜雲端測試批次累計："+Number(r.batchTotal||0)+" "+String(currentPackage?.baseUnit||"個");
+  }catch(err){
+    $("cloudStatus").className="status bad";$("cloudStatus").textContent="❌ 寫入失敗："+(err?.message||err);
+  }
+}
+async function startScanner(){
+  if(!$("employee").value.trim()){alert("請先輸入盤點人員姓名");return}
+  scanPaused=false;$("cameraStatus").className="status";$("cameraStatus").textContent="正在開啟後鏡頭……";
+  try{
+    if(!window.ZXingBrowser)throw new Error("掃碼程式載入失敗");
+    reader=new ZXingBrowser.BrowserMultiFormatReader();$("videoWrap").style.display="block";$("startBtn").style.display="none";$("stopBtn").style.display="block";
+    const devices=await ZXingBrowser.BrowserCodeReader.listVideoInputDevices();let deviceId;
+    if(devices?.length){const back=devices.find(d=>/back|rear|environment|後|背/i.test(d.label));deviceId=(back||devices[devices.length-1]).deviceId}
+    controls=await reader.decodeFromVideoDevice(deviceId,"video",(result,error)=>{
+      if(!result||scanPaused)return;
+      const code=result.getText?result.getText():String(result.text||"");
+      if(!code||code===lastCode)return;lastCode=code;setTimeout(()=>lastCode="",700);scanPaused=true;stopScanner();lookupBarcode(code);
+    });
+    $("cameraStatus").className="status ok";$("cameraStatus").textContent="✅ 相機已開啟，請將條碼放入綠色框內";
+  }catch(err){$("cameraStatus").className="status bad";$("cameraStatus").textContent="❌ 無法開啟相機："+(err?.message||err);stopScanner()}
+}
+function stopScanner(){try{controls?.stop()}catch(e){}controls=null;reader=null;$("videoWrap").style.display="none";$("startBtn").style.display="block";$("stopBtn").style.display="none"}
+$("startBtn").onclick=startScanner;$("stopBtn").onclick=stopScanner;
+$("manualBtn").onclick=()=>lookupBarcode($("manual").value);
+$("manual").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("manualBtn").click()}});
+$("baseOneBtn").onclick=()=>saveQty(1,"基準單位×1");
+$("baseAddBtn").onclick=()=>{const n=Math.floor(Number($("baseQty").value)||0);if(n<1){alert("請輸入正確數量");return}saveQty(n,"基準單位×"+n);$("baseQty").value=""};
+window.addEventListener("pagehide",stopScanner);
+</script>
+</body></html>
