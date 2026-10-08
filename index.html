@@ -47,7 +47,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="badge">✅ 正式盤點模式 v8｜INITIAL-20261008</div>
+  <div class="badge">✅ 正式盤點模式 v9｜搜尋穩定版｜INITIAL-20261008</div>
   <h1>信男藥局｜手機盤點</h1>
 
   <div class="card">
@@ -743,11 +743,13 @@ $("manualBtn").onclick=()=>{
 $("manual").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("manualBtn").click()}});
 
 let searchTimer=null;
+let searchRequestSeq=0;
+let searchComposing=false;
 
 function renderSearchResults(found,label){
   const box=$("searchResults");
   $("searchStatus").textContent=found.length
-    ? ((label||"找到")+" "+found.length+" 筆（最多顯示 30 筆）")
+    ? ((label||"找到")+" "+found.length+" 筆（選項會保留，直到你選擇或重新搜尋）")
     : "找不到商品，可以使用下方「新增商品」。";
 
   box.innerHTML=found.map((p,i)=>{
@@ -755,53 +757,81 @@ function renderSearchResults(found,label){
     if(p.posProductNo)meta.push("商品編號 "+esc(p.posProductNo));
     meta.push(esc(p.barcode||"無條碼"));
     if(p.vip!=null)meta.push("VIP "+p.vip);
-    return '<div class="searchItem"><div><div class="itemName">'+esc(p.name)+'</div><div class="small">'+meta.join("｜")+'</div></div><button class="secondary" data-i="'+i+'">選擇</button></div>';
+    return '<div class="searchItem"><div><div class="itemName">'+esc(p.name)+'</div><div class="small">'+meta.join("｜")+'</div></div><button class="secondary" type="button" data-i="'+i+'">選擇</button></div>';
   }).join("");
 
   box.querySelectorAll("button").forEach(btn=>{
-    btn.onclick=()=>showProductObject(found[Number(btn.dataset.i)],"手動搜尋");
+    btn.onclick=()=>{
+      clearTimeout(searchTimer);
+      searchRequestSeq++;
+      const p=found[Number(btn.dataset.i)];
+      showProductObject(p,"手動搜尋");
+      $("search").value="";
+      $("searchResults").innerHTML="";
+      $("searchStatus").textContent="✅ 已選擇："+p.name;
+    };
   });
 }
 
+async function runProductSearch(){
+  const raw=$("search").value.trim();
+  const q=raw.toLowerCase();
+
+  if(q.length<2){
+    searchRequestSeq++;
+    $("searchResults").innerHTML="";
+    $("searchStatus").textContent="至少輸入 2 個字或 2 碼";
+    return;
+  }
+
+  const mySeq=++searchRequestSeq;
+  const local=[];
+  for(const p of PRODUCT_LIST){
+    const name=String(p.name||"").toLowerCase();
+    const barcode=String(p.barcode||"").toLowerCase();
+    const posNo=String(p.posProductNo||"").toLowerCase();
+    if(name.includes(q)||barcode.includes(q)||posNo.includes(q)){
+      local.push(p);
+      if(local.length>=30)break;
+    }
+  }
+
+  if(local.length){
+    renderSearchResults(local,"本機找到");
+    return;
+  }
+
+  // 中央搜尋期間不清空舊選項，避免手機上「剛看到就消失」。
+  $("searchStatus").textContent="☁️ 正在搜尋中央商品主檔／POS商品編號…（目前選項會先保留）";
+
+  try{
+    const cloud=await searchProductsFromCloud(raw);
+    // 防止舊查詢較晚回來，把新查詢結果蓋掉。
+    if(mySeq!==searchRequestSeq)return;
+    if($("search").value.trim()!==raw)return;
+    renderSearchResults(cloud,cloud.length?"中央找到":"");
+  }catch(err){
+    if(mySeq!==searchRequestSeq)return;
+    $("searchStatus").textContent="⚠️ 中央搜尋暫時失敗；原本的選項會保留，可以再試一次。";
+  }
+}
+
+$("search").addEventListener("compositionstart",()=>{
+  searchComposing=true;
+  clearTimeout(searchTimer);
+});
+
+$("search").addEventListener("compositionend",()=>{
+  searchComposing=false;
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(runProductSearch,350);
+});
+
 $("search").addEventListener("input",()=>{
   clearTimeout(searchTimer);
-
-  searchTimer=setTimeout(async()=>{
-    const raw=$("search").value.trim();
-    const q=raw.toLowerCase();
-    const box=$("searchResults");
-    box.innerHTML="";
-
-    if(q.length<2){
-      $("searchStatus").textContent="至少輸入 2 個字或 2 碼";
-      return;
-    }
-
-    const local=[];
-    for(const p of PRODUCT_LIST){
-      const name=String(p.name||"").toLowerCase();
-      const barcode=String(p.barcode||"").toLowerCase();
-      const posNo=String(p.posProductNo||"").toLowerCase();
-      if(name.includes(q)||barcode.includes(q)||posNo.includes(q)){
-        local.push(p);
-        if(local.length>=30)break;
-      }
-    }
-
-    if(local.length){
-      renderSearchResults(local,"本機找到");
-      return;
-    }
-
-    $("searchStatus").textContent="☁️ 正在搜尋中央商品主檔／POS商品編號…";
-
-    try{
-      const cloud=await searchProductsFromCloud(raw);
-      renderSearchResults(cloud,cloud.length?"中央找到":"");
-    }catch(err){
-      $("searchStatus").textContent="⚠️ 中央搜尋暫時失敗，可以直接新增商品。";
-    }
-  },250);
+  if(searchComposing)return;
+  // 手機輸入法常會連續觸發 input，稍微等穩定後再搜尋，避免結果閃爍。
+  searchTimer=setTimeout(runProductSearch,450);
 });
 
 $("openAddProductBtn").onclick=()=>{
