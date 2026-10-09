@@ -47,7 +47,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="badge">✅ 正式盤點模式 v11｜雲端主檔優先版｜INITIAL-20261008</div>
+  <div class="badge">✅ 正式盤點模式 v12｜可直接補條碼版｜INITIAL-20261008</div>
   <h1>信男藥局｜手機盤點</h1>
 
   <div class="card">
@@ -71,6 +71,21 @@
     <div class="status">目前商品</div>
     <div id="productName" class="name"></div>
     <div id="productCode" class="code"></div>
+
+    <div id="addBarcodePanel" style="display:none;margin-top:12px;padding:12px;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff">
+      <div style="font-weight:800;color:#1d4ed8">🏷️ 這個商品有商品編號，但還沒有條碼</div>
+      <div id="addBarcodeMeta" class="status" style="margin-top:5px"></div>
+
+      <label for="attachBarcode" style="margin-top:10px">國際條碼</label>
+      <input id="attachBarcode" inputmode="numeric" autocomplete="off" placeholder="可手動輸入，或按下方用相機掃描">
+
+      <div class="actionGrid" style="margin-top:10px">
+        <button id="scanAttachBarcodeBtn" class="secondary" type="button">📷 掃描條碼</button>
+        <button id="saveAttachBarcodeBtn" class="blue" type="button">＋ 加入條碼</button>
+      </div>
+      <div id="attachBarcodeStatus" class="status">加入後仍是同一個商品，不會增加或扣除庫存。</div>
+    </div>
+
     <div id="productPrice" class="price"></div>
     <div id="batchTotalHint" class="hint" style="margin-top:10px">正在取得本批累計…</div>
 
@@ -184,7 +199,7 @@ for(const p of PRODUCT_LIST){
 }
 
 const counts={};
-let reader=null,controls=null,lockedCode=null,lastSuccessAt=0,currentProduct=null,currentMethod="條碼掃描",currentBatchTotal=null,currentPackageData=null,correctionSign=-1,scanPaused=false,audioCtx=null;
+let reader=null,controls=null,lockedCode=null,lastSuccessAt=0,currentProduct=null,currentMethod="條碼掃描",currentBatchTotal=null,currentPackageData=null,correctionSign=-1,scanPaused=false,barcodeCaptureMode=false,audioCtx=null;
 const $=id=>document.getElementById(id);
 
 $("employee").value=localStorage.getItem("xinnan_emp")||"";
@@ -472,6 +487,110 @@ function renderPackageOptions(data){
   });
 }
 
+function renderAddBarcodePanel(p){
+  const panel=$("addBarcodePanel");
+  const canAttach=!!(p && !String(p.barcode||"").trim() && String(p.posProductNo||"").trim());
+
+  barcodeCaptureMode=false;
+  $("attachBarcode").value="";
+  $("attachBarcodeStatus").className="status";
+  $("attachBarcodeStatus").textContent="加入後仍是同一個商品，不會增加或扣除庫存。";
+
+  if(!canAttach){
+    panel.style.display="none";
+    return;
+  }
+
+  $("addBarcodeMeta").textContent="POS商品編號："+p.posProductNo+"｜"+p.name;
+  panel.style.display="block";
+}
+
+async function beginBarcodeCapture(){
+  if(!currentProduct || currentProduct.barcode || !currentProduct.posProductNo){
+    alert("目前商品不符合補條碼條件");
+    return;
+  }
+
+  barcodeCaptureMode=true;
+  scanPaused=false;
+  lockedCode=null;
+  $("attachBarcodeStatus").className="status";
+  $("attachBarcodeStatus").textContent="📷 請把商品條碼放進綠色掃描框。";
+  $("cameraStatus").className="status";
+  $("cameraStatus").textContent="🏷️ 補條碼模式：請掃描 "+currentProduct.name+" 的條碼";
+
+  if($("videoWrap").style.display==="none"){
+    try{
+      await startScanner();
+    }catch(e){}
+  }
+}
+
+async function saveBarcodeForCurrent(){
+  if(!currentProduct)return;
+
+  const employee=$("employee").value.trim();
+  const barcode=$("attachBarcode").value.trim();
+  const p=currentProduct;
+
+  if(!employee){alert("請先輸入盤點人員姓名");return}
+  if(!p.posProductNo){alert("這個商品沒有 POS商品編號，請轉人工處理");return}
+  if(p.barcode){alert("這個商品已經有條碼："+p.barcode);return}
+  if(!barcode){alert("請先輸入或掃描條碼");return}
+
+  if(!confirm("確認把條碼 "+barcode+" 加到這個商品？\n\n"+p.name+"\n商品編號："+p.posProductNo+"\n\n這個動作不會改庫存數量。"))return;
+
+  const btn=$("saveAttachBarcodeBtn");
+  btn.disabled=true;
+  $("scanAttachBarcodeBtn").disabled=true;
+  $("attachBarcodeStatus").className="status";
+  $("attachBarcodeStatus").textContent="☁️ 正在檢查並加入條碼…";
+
+  try{
+    const oldKey=keyOf(p);
+    const result=await cloudFrameRequest({},{
+      action:"addBarcodeToProduct",
+      employee,
+      barcode,
+      productName:p.name,
+      posProductNo:p.posProductNo
+    });
+
+    const updated=registerDynamicProduct(result.product||{
+      ...p,
+      barcode
+    });
+
+    const newKey=keyOf(updated);
+    if(oldKey!==newKey && counts[oldKey]){
+      counts[newKey]=counts[newKey]||{product:updated,qty:0};
+      counts[newKey].product=updated;
+      counts[newKey].qty+=counts[oldKey].qty;
+      delete counts[oldKey];
+      render();
+    }
+
+    currentProduct=updated;
+    barcodeCaptureMode=false;
+    scanPaused=true;
+    lockedCode=null;
+
+    $("productCode").textContent="條碼："+updated.barcode+"｜商品編號："+updated.posProductNo;
+    renderAddBarcodePanel(updated);
+    $("cloudStatus").className="status ok";
+    $("cloudStatus").textContent="✅ 已加入條碼 "+updated.barcode+"｜"+updated.name;
+  }catch(err){
+    barcodeCaptureMode=false;
+    scanPaused=true;
+    lockedCode=null;
+    $("attachBarcodeStatus").className="status bad";
+    $("attachBarcodeStatus").textContent="❌ "+(err&&err.message?err.message:"加入條碼失敗");
+  }finally{
+    btn.disabled=false;
+    $("scanAttachBarcodeBtn").disabled=false;
+  }
+}
+
 function showProductObject(p,method="條碼掃描"){
   if(!p)return;
   currentProduct=p;currentMethod=method;currentBatchTotal=null;currentPackageData=null;correctionSign=-1;scanPaused=true;
@@ -503,7 +622,10 @@ function showProductObject(p,method="條碼掃描"){
   });
 
   $("productName").textContent=p.name;
-  $("productCode").textContent=p.barcode?("條碼："+p.barcode):"無條碼商品";
+  $("productCode").textContent=p.barcode
+    ? ("條碼："+p.barcode+(p.posProductNo?("｜商品編號："+p.posProductNo):""))
+    : (p.posProductNo?("商品編號："+p.posProductNo+"｜目前無條碼"):"無條碼商品");
+  renderAddBarcodePanel(p);
   $("productPrice").textContent="VIP價："+(p.vip==null?"—":p.vip);
   $("qty").value=1;
   $("productCard").style.display="block";
@@ -666,7 +788,7 @@ async function submitCorrection(){
 }
 
 function finishProduct(){
-  currentProduct=null;currentBatchTotal=null;currentPackageData=null;scanPaused=false;renderPackageOptions(null);$("correctionPanel").style.display="none";$("productCard").style.display="none";lockedCode=null;
+  currentProduct=null;currentBatchTotal=null;currentPackageData=null;scanPaused=false;barcodeCaptureMode=false;renderPackageOptions(null);renderAddBarcodePanel(null);$("correctionPanel").style.display="none";$("productCard").style.display="none";lockedCode=null;
   if($("videoWrap").style.display!=="none"){
     $("cameraStatus").className="status ok";
     $("cameraStatus").textContent="✅ 可以繼續掃下一個商品";
@@ -697,7 +819,19 @@ async function startScanner(){
     }
     controls=await reader.decodeFromVideoDevice(deviceId,"video",(result,error)=>{
       const now=Date.now();
-      if(result&&!scanPaused){
+      if(result&&barcodeCaptureMode){
+        const code=result.getText?result.getText():String(result.text||"");
+        if(!code||lockedCode===code)return;
+        lockedCode=code;lastSuccessAt=now;
+        barcodeCaptureMode=false;
+        scanPaused=true;
+        $("attachBarcode").value=code;
+        $("attachBarcodeStatus").className="status ok";
+        $("attachBarcodeStatus").textContent="✅ 已掃到條碼 "+code+"，請按「加入條碼」確認。";
+        $("cameraStatus").className="status ok";
+        $("cameraStatus").textContent="✅ 已取得要加入的條碼："+code;
+        $("addBarcodePanel").scrollIntoView({behavior:"smooth",block:"center"});
+      }else if(result&&!scanPaused){
         const code=result.getText?result.getText():String(result.text||"");
         if(!code||lockedCode===code)return;
         lockedCode=code;lastSuccessAt=now;
@@ -733,6 +867,9 @@ $("confirmCorrectionBtn").onclick=submitCorrection;
 $("cancelCorrectionBtn").onclick=()=>{$("correctionPanel").style.display="none";};
 
 $("startBtn").onclick=startScanner;$("stopBtn").onclick=stopScanner;
+$("scanAttachBarcodeBtn").onclick=beginBarcodeCapture;
+$("saveAttachBarcodeBtn").onclick=saveBarcodeForCurrent;
+$("attachBarcode").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("saveAttachBarcodeBtn").click()}});
 $("minusBtn").onclick=()=>{$("qty").value=Math.max(1,(Number($("qty").value)||1)-1)};
 $("plusBtn").onclick=()=>{$("qty").value=(Number($("qty").value)||1)+1};
 $("quickBtn").onclick=()=>addCurrent(1);
