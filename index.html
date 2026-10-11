@@ -15,7 +15,7 @@
 </head>
 <body>
   <div id="status">正在載入信男藥局盤點系統…</div>
-  <iframe id="app" title="信男藥局手機盤點" src="./app-v12.html?v=20261011-7"></iframe>
+  <iframe id="app" title="信男藥局手機盤點" src="./app-v12.html?v=20261011-8"></iframe>
   <script>
   const frame=document.getElementById("app");
   const status=document.getElementById("status");
@@ -27,18 +27,30 @@
       if(old)old.remove();
       const script=doc.createElement("script");
       script.id="xinnan-v13-hotfix";
-      script.src="./hotfix-v13.js?v=20261011-7";
+      script.src="./hotfix-v13.js?v=20261011-8";
       script.onload=()=>{
         const posSync=doc.createElement("script");
         posSync.id="xinnan-pos-sync";
-        posSync.src="./pos-sync-v13.js?v=20261011-7";
+        posSync.src="./pos-sync-v13.js?v=20261011-8";
         posSync.onload=()=>{
           const p=frame.contentWindow.XINNAN_POS_SYNC_PROMISE;
           if(p&&typeof p.then==="function"){
-            p.then(()=>{ status.style.display="none"; })
+            p.then(()=>{
+              const live=doc.createElement("script");
+              live.id="xinnan-live-master-v14";
+              live.src="./live-master-v14.js?v=20261011-8";
+              live.onload=()=>{ status.style.display="none"; };
+              live.onerror=()=>{ status.innerHTML="❌ Google 主檔即時同步載入失敗，請重新整理。"; };
+              doc.body.appendChild(live);
+            })
              .catch(()=>{ status.innerHTML="❌ POS 對應同步失敗，請重新整理。"; });
           }else{
-            status.style.display="none";
+            const live=doc.createElement("script");
+            live.id="xinnan-live-master-v14";
+            live.src="./live-master-v14.js?v=20261011-8";
+            live.onload=()=>{ status.style.display="none"; };
+            live.onerror=()=>{ status.innerHTML="❌ Google 主檔即時同步載入失敗，請重新整理。"; };
+            doc.body.appendChild(live);
           }
         };
         posSync.onerror=()=>{ status.innerHTML="❌ POS 對應檔載入失敗，請重新整理。"; };
