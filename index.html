@@ -15,7 +15,7 @@
 </head>
 <body>
   <div id="status">正在載入信男藥局盤點系統…</div>
-  <iframe id="app" title="信男藥局手機盤點" src="./app-v12.html?v=20261011-3"></iframe>
+  <iframe id="app" title="信男藥局手機盤點" src="./app-v12.html?v=20261011-6"></iframe>
   <script>
   const frame=document.getElementById("app");
   const status=document.getElementById("status");
@@ -27,8 +27,15 @@
       if(old)old.remove();
       const script=doc.createElement("script");
       script.id="xinnan-v13-hotfix";
-      script.src="./hotfix-v13.js?v=20261011-3";
-      script.onload=()=>{ status.style.display="none"; };
+      script.src="./hotfix-v13.js?v=20261011-6";
+      script.onload=()=>{
+        const patch=doc.createElement("script");
+        patch.id="xinnan-patch-2003858";
+        patch.src="./patch-2003858.js?v=20261011-6";
+        patch.onload=()=>{ status.style.display="none"; };
+        patch.onerror=()=>{ status.innerHTML="❌ 商品快取修補載入失敗，請重新整理。"; };
+        doc.body.appendChild(patch);
+      };
       script.onerror=()=>{
         status.innerHTML="❌ v13 修補載入失敗，請重新整理。";
       };
