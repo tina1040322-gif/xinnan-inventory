@@ -55,7 +55,5 @@ window.XINNAN_POS_SYNC_PROMISE=(async()=>{
     BARCODE_MAP.get(bc).push(p);
   }
 
-  const badge=document.querySelector(".badge");
-  if(badge)badge.textContent="✅ 正式盤點模式 v13｜完整 POS 對應同步版｜INITIAL-20261008";
   return {count:rows.length};
 })();
