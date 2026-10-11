@@ -15,7 +15,7 @@
 </head>
 <body>
   <div id="status">正在載入信男藥局盤點系統…</div>
-  <iframe id="app" title="信男藥局手機盤點" src="./app-v12.html?v=20261012-1"></iframe>
+  <iframe id="app" title="信男藥局手機盤點" src="./app-v12.html?v=20261012-2"></iframe>
   <script>
   const frame=document.getElementById("app");
   const status=document.getElementById("status");
@@ -27,18 +27,18 @@
       if(old)old.remove();
       const script=doc.createElement("script");
       script.id="xinnan-v13-hotfix";
-      script.src="./hotfix-v13.js?v=20261012-1";
+      script.src="./hotfix-v13.js?v=20261012-2";
       script.onload=()=>{
         const live=doc.createElement("script");
         live.id="xinnan-live-master-v14";
-        live.src="./live-master-v14.js?v=20261012-1";
+        live.src="./live-master-v14.js?v=20261012-2";
         live.onload=()=>{
           status.style.display="none";
 
           // POS 對應只做背景備援同步，不再阻塞整個盤點頁。
           const posSync=doc.createElement("script");
           posSync.id="xinnan-pos-sync";
-          posSync.src="./pos-sync-v13.js?v=20261012-1";
+          posSync.src="./pos-sync-v13.js?v=20261012-2";
           posSync.onerror=()=>{ console.warn("POS background sync failed"); };
           doc.body.appendChild(posSync);
         };
