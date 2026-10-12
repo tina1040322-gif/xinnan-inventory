@@ -2,59 +2,16 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-  <meta name="theme-color" content="#0f766e">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="cache-control" content="no-cache,no-store,must-revalidate">
+  <meta http-equiv="pragma" content="no-cache">
+  <meta http-equiv="expires" content="0">
   <title>信男藥局｜手機盤點</title>
-  <style>
-    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#f4f7fb}
-    #app{position:fixed;inset:0;width:100%;height:100%;border:0;background:#f4f7fb}
-    #status{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",Arial,sans-serif;
-      color:#475569;font-weight:700;background:#f4f7fb;z-index:2}
-  </style>
+  <script>
+    location.replace("./app-v14.html?v=20261012-3");
+  </script>
 </head>
 <body>
-  <div id="status">正在載入信男藥局盤點系統…</div>
-  <iframe id="app" title="信男藥局手機盤點" src="./app-v12.html?v=20261012-2"></iframe>
-  <script>
-  const frame=document.getElementById("app");
-  const status=document.getElementById("status");
-  frame.addEventListener("load",()=>{
-    try{
-      const doc=frame.contentDocument;
-      if(!doc||!doc.body)throw new Error("無法讀取盤點頁");
-      const old=doc.getElementById("xinnan-v13-hotfix");
-      if(old)old.remove();
-      const script=doc.createElement("script");
-      script.id="xinnan-v13-hotfix";
-      script.src="./hotfix-v13.js?v=20261012-2";
-      script.onload=()=>{
-        const live=doc.createElement("script");
-        live.id="xinnan-live-master-v14";
-        live.src="./live-master-v14.js?v=20261012-2";
-        live.onload=()=>{
-          status.style.display="none";
-
-          // POS 對應只做背景備援同步，不再阻塞整個盤點頁。
-          const posSync=doc.createElement("script");
-          posSync.id="xinnan-pos-sync";
-          posSync.src="./pos-sync-v13.js?v=20261012-2";
-          posSync.onerror=()=>{ console.warn("POS background sync failed"); };
-          doc.body.appendChild(posSync);
-        };
-        live.onerror=()=>{
-          status.innerHTML="❌ Google 主檔即時搜尋載入失敗，請重新整理。";
-        };
-        doc.body.appendChild(live);
-      };
-      script.onerror=()=>{
-        status.innerHTML="❌ v13 修補載入失敗，請重新整理。";
-      };
-      doc.body.appendChild(script);
-    }catch(err){
-      status.innerHTML="❌ 盤點頁載入失敗，請重新整理。";
-    }
-  });
-  </script>
+  正在開啟信男藥局盤點系統…
 </body>
 </html>
