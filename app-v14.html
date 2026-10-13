@@ -240,10 +240,11 @@ function cloudFrameRequest(params={}, formFields=null){
       if(form&&form.parentNode)form.parentNode.removeChild(form);
       if(iframe.parentNode)iframe.parentNode.removeChild(iframe);
     };
+    const timeoutMs=formFields?60000:15000;
     const timer=setTimeout(()=>{
       cleanup();
       reject(new Error("雲端回應逾時"));
-    },15000);
+    },timeoutMs);
 
     const onMessage=(event)=>{
       const data=event.data;
@@ -747,7 +748,7 @@ async function addCurrent(qty,methodOverride=null){
   }catch(err){
     const status=$("cloudStatus");
     status.className="status bad";
-    status.textContent="❌ 這筆目前無法確認寫入，畫面會保留商品，請先不要重複按。請稍後再試。";
+    status.textContent="❌ 寫入失敗："+(err&&err.message?err.message:"未知錯誤")+"｜畫面會保留商品，請先不要重複按。";
     console.error(err);
   }finally{
     savingCount=false;
