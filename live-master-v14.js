@@ -86,25 +86,3 @@ showBarcode=async function(code){
 const badge=document.querySelector(".badge");
 if(badge)badge.textContent="✅ 正式盤點模式 v14｜Google 商品主檔即時同步版｜INITIAL-20261008";
 })();
-
-// 2026-10-13 健挺盒/顆盤點選項：即使雲端包裝規則尚未回傳，也在手機盤點頁補上盒裝換算。
-const __xinnanOriginalGetPackageOptionsFromCloud=getPackageOptionsFromCloud;
-getPackageOptionsFromCloud=async function(p){
-  const barcode=String(p?.barcode||"").trim();
-  let data=null;
-  try{data=await __xinnanOriginalGetPackageOptionsFromCloud(p)}catch(e){data=null}
-  const fallback={
-    "4713930511077":{baseUnit:"顆",conversion:4,unit:"盒",posName:"2001161 健挺4入"},
-    "4713930511459":{baseUnit:"顆",conversion:30,unit:"盒",posName:"2002172 健挺膜衣錠100mg 30錠/盒"}
-  }[barcode];
-  if(!fallback)return data;
-  const out=(data&&typeof data==="object")?{...data}:{options:[]};
-  const opts=Array.isArray(out.options)?[...out.options]:[];
-  if(!opts.some(o=>Number(o.conversion)===fallback.conversion && String(o.unit||"")===fallback.unit)){
-    opts.push({unit:fallback.unit,conversion:fallback.conversion,posName:fallback.posName});
-  }
-  out.baseUnit=fallback.baseUnit;
-  out.options=opts;
-  out.hasPackageVariants=true;
-  return out;
-};
