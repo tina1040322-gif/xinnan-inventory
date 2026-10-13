@@ -37,9 +37,13 @@ for(const p of PRODUCT_LIST){
   BARCODE_MAP.get(code).push(p);
 }
 
-// Make cloud fallback fail sooner; local current cache is now the primary lookup.
+// Reads may fail fast, but inventory writes must wait for the Apps Script response.
+// A 7-second Promise.race here caused valid POST inventory writes to be reported as failed.
 const cloudFrameRequestV12=cloudFrameRequest;
 cloudFrameRequest=function(params={},formFields=null){
+  if(formFields){
+    return cloudFrameRequestV12(params,formFields);
+  }
   return Promise.race([
     cloudFrameRequestV12(params,formFields),
     new Promise((_,reject)=>setTimeout(()=>reject(new Error("雲端回應逾時")),7000))
