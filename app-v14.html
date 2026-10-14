@@ -277,12 +277,30 @@ function cloudFrameRequest(params={}, formFields=null){
   });
 }
 
+// 成本備援僅以相同國際條碼＋完整品名比對，不能用模糊品名猜測。
+// 中央有成本時永遠以中央為準（包含成本 0 元）。
+const LOCAL_COST_BY_PRODUCT=new Map();
+for(const item of PRODUCT_LIST){
+  if(!item.barcode || !item.name || item.cost===null || item.cost===undefined || item.cost==="")continue;
+  const localCost=Number(item.cost);
+  if(!Number.isFinite(localCost))continue;
+  const lookupKey=String(item.barcode)+"|"+String(item.name);
+  if(!LOCAL_COST_BY_PRODUCT.has(lookupKey))LOCAL_COST_BY_PRODUCT.set(lookupKey,localCost);
+}
+
 function normalizeCloudProduct(p){
+  const barcode=String(p&&p.barcode||"");
+  const name=String(p&&p.name||"");
+  const cloudCost=(p&&p.cost!==""&&p.cost!=null)?Number(p.cost):null;
+  const lookupKey=barcode+"|"+name;
+  const cost=(cloudCost!==null && Number.isFinite(cloudCost))
+    ? cloudCost
+    : (LOCAL_COST_BY_PRODUCT.has(lookupKey)?LOCAL_COST_BY_PRODUCT.get(lookupKey):null);
   return {
-    barcode:String(p&&p.barcode||""),
-    name:String(p&&p.name||""),
+    barcode,
+    name,
     vip:(p&&p.vip!==""&&p&&p.vip!=null)?Number(p.vip):null,
-    cost:(p&&p.cost!==""&&p&&p.cost!=null)?Number(p.cost):null,
+    cost,
     posProductNo:String(p&&p.posProductNo||""),
     mode:String(p&&p.mode||((p&&p.barcode)?"條碼掃描":"搜尋商品"))
   };
