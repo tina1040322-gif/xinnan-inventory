@@ -47,7 +47,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="badge">✅ 正式盤點模式 v12｜可直接補條碼版｜INITIAL-20261008</div>
+  <div class="badge">✅ 正式盤點模式｜成本修正版 20261014-C2｜INITIAL-20261008</div>
   <h1>信男藥局｜手機盤點</h1>
 
   <div class="card">
@@ -288,14 +288,38 @@ for(const item of PRODUCT_LIST){
   if(!LOCAL_COST_BY_PRODUCT.has(lookupKey))LOCAL_COST_BY_PRODUCT.set(lookupKey,localCost);
 }
 
+// 雲端未提供成本時，只依「唯一相同國際條碼」回查內建成本。
+// 不以相似品名猜測；同一條碼若對應不同商品，保守地不採用備援。
+const SAFE_LOCAL_COST_BY_BARCODE=new Map();
+const AMBIGUOUS_LOCAL_COST_BARCODES=new Set();
+for(const item of PRODUCT_LIST){
+  const b=String(item.barcode||"").trim();
+  if(!b)continue;
+  if(SAFE_LOCAL_COST_BY_BARCODE.has(b)){
+    AMBIGUOUS_LOCAL_COST_BARCODES.add(b);
+    continue;
+  }
+  const n=(item.cost==null||item.cost==="")?null:Number(item.cost);
+  SAFE_LOCAL_COST_BY_BARCODE.set(b,Number.isFinite(n)?n:null);
+}
+function verifiedCost(p){
+  const raw=p&&p.cost;
+  if(raw!==null&&raw!==undefined&&raw!==""){
+    const n=Number(raw);
+    if(Number.isFinite(n))return n;
+  }
+  const b=String(p&&p.barcode||"").trim();
+  if(b&&!AMBIGUOUS_LOCAL_COST_BARCODES.has(b)&&SAFE_LOCAL_COST_BY_BARCODE.has(b)){
+    return SAFE_LOCAL_COST_BY_BARCODE.get(b);
+  }
+  return null;
+}
 function normalizeCloudProduct(p){
   const barcode=String(p&&p.barcode||"");
   const name=String(p&&p.name||"");
   const cloudCost=(p&&p.cost!==""&&p.cost!=null)?Number(p.cost):null;
   const lookupKey=barcode+"|"+name;
-  const cost=(cloudCost!==null && Number.isFinite(cloudCost))
-    ? cloudCost
-    : (LOCAL_COST_BY_PRODUCT.has(lookupKey)?LOCAL_COST_BY_PRODUCT.get(lookupKey):null);
+  const cost=verifiedCost(p);
   return {
     barcode,
     name,
@@ -950,7 +974,7 @@ function renderSearchResults(found,label){
     if(p.posProductNo)meta.push("商品編號 "+esc(p.posProductNo));
     meta.push(esc(p.barcode||"無條碼"));
     if(p.vip!=null)meta.push("VIP "+p.vip);
-    if(p.cost!=null)meta.push("成本 "+p.cost);
+    if(verifiedCost(p)!=null)meta.push("成本 "+verifiedCost(p));
     return '<div class="searchItem"><div><div class="itemName">'+esc(p.name)+'</div><div class="small">'+meta.join("｜")+'</div></div><button class="secondary" type="button" data-i="'+i+'">選擇</button></div>';
   }).join("");
 
