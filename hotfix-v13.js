@@ -182,10 +182,18 @@ function __fillCostFromLocal(p){
   const bc=String(p.barcode||"");
   const name=String(p.name||"");
   const pos=String(p.posProductNo||"");
-  const local=PRODUCT_LIST.find(x =>
-    (bc && String(x.barcode||"")===bc && String(x.name||"")===name) ||
-    (pos && String(x.posProductNo||"")===pos)
-  );
+  let local=null;
+  // Cloud and local product names may differ slightly. Use stable identifiers first.
+  if(pos){
+    local=PRODUCT_LIST.find(x=>String(x.posProductNo||"").trim()===pos) || null;
+  }
+  if(!local && bc){
+    const sameBarcode=PRODUCT_LIST.filter(x=>String(x.barcode||"").trim()===bc);
+    local=sameBarcode.find(x=>String(x.name||"").trim()===name) || sameBarcode.find(x=>x.cost!=null) || sameBarcode[0] || null;
+  }
+  if(!local && name){
+    local=PRODUCT_LIST.find(x=>String(x.name||"").trim()===name) || null;
+  }
   if(local && local.cost!=null) p.cost=local.cost;
   return p;
 }
