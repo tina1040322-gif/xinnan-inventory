@@ -6,7 +6,27 @@ function syncCloudRows(rows){
     let i=-1;
     if(pos)i=PRODUCT_LIST.findIndex(x=>String(x.posProductNo||"").trim()===pos);
     if(i<0&&bc)i=PRODUCT_LIST.findIndex(x=>String(x.barcode||"").trim()===bc);
-    if(i>=0)PRODUCT_LIST[i]=p; else PRODUCT_LIST.push(p);
+    
+if (i >= 0) {
+  const old = PRODUCT_LIST[i];
+
+  const hasCloudCost =
+    p.cost !== null &&
+    p.cost !== undefined &&
+    p.cost !== "" &&
+    Number.isFinite(Number(p.cost));
+
+  PRODUCT_LIST[i] = {
+    ...old,
+    ...p,
+    cost: hasCloudCost
+      ? Number(p.cost)
+      : old.cost
+  };
+} else {
+  PRODUCT_LIST.push(p);
+}
+
   }
 }
 
@@ -84,5 +104,9 @@ showBarcode=async function(code){
 };
 
 const badge=document.querySelector(".badge");
-if(badge)badge.textContent="✅ 正式盤點模式 v14｜Google 商品主檔即時同步版｜INITIAL-20261008";
-})();
+
+if (badge) {
+  badge.textContent =
+    "✅ 正式盤點模式 v14｜成本顯示修正 C4｜INITIAL-20261008";
+}
+
