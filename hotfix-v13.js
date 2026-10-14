@@ -174,6 +174,37 @@ runProductSearch=async function(){
   }
 };
 
+
+// Cost display fallback: cloud product payload may not include cost.
+// Rehydrate cost from the local PRODUCT_LIST (which is generated from 商品主檔).
+function __fillCostFromLocal(p){
+  if(!p || p.cost!=null) return p;
+  const bc=String(p.barcode||"");
+  const name=String(p.name||"");
+  const pos=String(p.posProductNo||"");
+  const local=PRODUCT_LIST.find(x =>
+    (bc && String(x.barcode||"")===bc && String(x.name||"")===name) ||
+    (pos && String(x.posProductNo||"")===pos)
+  );
+  if(local && local.cost!=null) p.cost=local.cost;
+  return p;
+}
+
+if(typeof showProductObject==="function"){
+  const __origShowProductObjectCost=showProductObject;
+  showProductObject=function(p,source){
+    __fillCostFromLocal(p);
+    return __origShowProductObjectCost(p,source);
+  };
+}
+if(typeof renderSearchResults==="function"){
+  const __origRenderSearchResultsCost=renderSearchResults;
+  renderSearchResults=function(found,label){
+    (found||[]).forEach(__fillCostFromLocal);
+    return __origRenderSearchResultsCost(found,label);
+  };
+}
+
 // Show deployed patch version.
 const badge=document.querySelector(".badge");
 if(badge)badge.textContent="✅ 正式盤點模式 v14｜Google 商品主檔即時同步版｜INITIAL-20261008";
