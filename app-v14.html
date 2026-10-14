@@ -47,7 +47,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="badge">✅ 正式盤點模式｜成本修正版 20261014-C2｜INITIAL-20261008</div>
+  <div class="badge">✅ 正式盤點模式｜新增目前庫存顯示｜INITIAL-20261008</div>
   <h1>信男藥局｜手機盤點</h1>
 
   <div class="card">
@@ -88,6 +88,7 @@
 
     <div id="productPrice" class="price"></div>
     <div id="batchTotalHint" class="hint" style="margin-top:10px">正在取得本批累計…</div>
+    <div id="currentStockHint" class="hint" style="margin-top:8px">目前庫存：讀取中…</div>
 
     <div id="packagePanel" class="packagePanel">
       <div class="packageTitle">📦 這個商品有包裝換算</div>
@@ -473,6 +474,14 @@ function getBatchTotalFromCloud(p){
   }).then(data=>Number(data.batchTotal||0));
 }
 
+function getCurrentStockFromCloud(p){
+  return cloudFrameRequest({
+    action:"getCurrentStockFrame",
+    barcode:p.barcode||"",
+    productName:p.name
+  });
+}
+
 function getPackageOptionsFromCloud(p){
   return cloudFrameRequest({
     action:"getPackageOptionsFrame",
@@ -686,6 +695,17 @@ function showProductObject(p,method="條碼掃描"){
   }).catch(()=>{
     if(currentProduct!==p)return;
     $("batchTotalHint").textContent="⚠️ 暫時無法取得中央累計，但仍可先盤點。";
+  });
+
+  $("currentStockHint").textContent="☁️ 正在讀取目前庫存…";
+  getCurrentStockFromCloud(p).then(data=>{
+    if(currentProduct!==p)return;
+    $("currentStockHint").textContent=data.hasBaseline && Number.isFinite(Number(data.qty))
+      ? "目前庫存："+Number(data.qty).toLocaleString("zh-TW")+(data.unit||"")
+      : "目前庫存：尚未建立基準";
+  }).catch(err=>{
+    if(currentProduct!==p)return;
+    $("currentStockHint").textContent="目前庫存：暫時無法讀取（不影響盤點）";
   });
 
   renderPackageOptions(null);
@@ -1070,9 +1090,7 @@ window.addEventListener("pagehide",stopScanner);
 </script>
 
 <script src="./hotfix-v13.js?v=20261014-3"></script>
-
 <script src="./live-master-v14.js?v=20261014-C4"></script>
-
 <script>
 (function(){
   const s=document.createElement("script");
